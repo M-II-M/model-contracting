@@ -39,6 +39,13 @@
             "MIIM\\ModelContracting\\Tests\\": "tests"
         }
     },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "MIIM\\ModelContracting\\ModelContractingServiceProvider"
+            ]
+        }
+    },
     "minimum-stability": "dev",
     "prefer-stable": true
 }
