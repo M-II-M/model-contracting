@@ -3,7 +3,8 @@
 use Illuminate\Support\Facades\Route;
 use MIIM\ModelContracting\Http\Controllers\ModelContractingController;
 
-Route::prefix(config('model-contracting.route_prefix'))
+//Route::prefix(config('model-contracting.route_prefix'))
+Route::prefix('api')
     ->middleware(config('model-contracting.route_middleware'))
     ->group(function () {
 
