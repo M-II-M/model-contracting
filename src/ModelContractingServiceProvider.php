@@ -13,7 +13,7 @@ class ModelContractingServiceProvider extends ServiceProvider
     public function register()
     {
         $this->mergeConfigFrom(
-            __DIR__.'/../config/model-resource.php', 'model-resource'
+            __DIR__.'/../config/model-contract.php', 'model-contract'
         );
 
         $this->app->singleton(ModelRegistryService::class, function ($app) {
@@ -42,8 +42,8 @@ class ModelContractingServiceProvider extends ServiceProvider
             ]);
 
             $this->publishes([
-                __DIR__.'/../config/model-resource.php' => config_path('model-resource.php'),
-            ], 'model-resource-config');
+                __DIR__.'/../config/model-contract.php' => config_path('model-contract.php'),
+            ], 'model-contract-config');
         }
 
         // Автоматическая загрузка существующих ресурсов
@@ -52,13 +52,13 @@ class ModelContractingServiceProvider extends ServiceProvider
 
     private function loadExistingResources(): void
     {
-        $path = config('model-resource.path', app_path('ModelResources'));
+        $path = config('model-contract.path', app_path('ModelResources'));
 
         if (!file_exists($path)) {
             return;
         }
 
-        $namespace = config('model-resource.namespace', 'App\\ModelResources');
+        $namespace = config('model-contract.namespace', 'App\\ModelResources');
 
         foreach (glob($path . '/*.php') as $file) {
             $className = pathinfo($file, PATHINFO_FILENAME);

@@ -196,7 +196,7 @@ class GenerateModelResourceCommand extends Command
 
     private function mapColumnType(string $columnType): string
     {
-        $fieldTypes = config('model-resource.field_types', []);
+        $fieldTypes = config('model-contract.field_types', []);
 
         foreach ($fieldTypes as $type => $matches) {
             foreach ($matches as $match) {
@@ -251,7 +251,7 @@ class GenerateModelResourceCommand extends Command
 
     private function getResourceClassName(string $modelClass): string
     {
-        $namespace = config('model-resource.namespace', 'App\\ModelResources');
+        $namespace = config('model-contract.namespace', 'App\\ModelResources');
         $className = class_basename($modelClass) . 'ContractingResource';
 
         return $namespace . '\\' . $className;
@@ -260,8 +260,8 @@ class GenerateModelResourceCommand extends Command
     private function generateResourceClass(string $modelClass, string $alias, array $fields, array $relationships): void
     {
         $className = class_basename($modelClass) . 'ContractingResource';
-        $namespace = config('model-resource.namespace', 'App\\ModelResources');
-        $path = config('model-resource.path', app_path('ModelResources'));
+        $namespace = config('model-contract.namespace', 'App\\ModelResources');
+        $path = config('model-contract.path', app_path('ModelResources'));
 
         if (!file_exists($path)) {
             mkdir($path, 0755, true);
@@ -431,7 +431,7 @@ STUB;
     private function registerResource(string $resourceClass): void
     {
         if (!class_exists($resourceClass)) {
-            require_once(config('model-resource.path', app_path('ModelResources')) .
+            require_once(config('model-contract.path', app_path('ModelResources')) .
                 '/' . class_basename($resourceClass) . '.php');
         }
 
