@@ -24,18 +24,22 @@ class GenerateModelResourceCommand extends Command
             $table = $model->getTable();
             $columns = Schema::getColumnListing($table);
 
-            $this->info("Генерация ресурса для: {$modelClass}");
-            $this->info("Таблица: {$table}");
-            $this->info("Алиас: {$alias}");
+            $this->info("Generating resource for model: {$modelClass}");
+            $this->info("Table: {$table}");
+            $this->info("Alias: {$alias}");
+            $this->info("Database driver: " . DB::connection()->getDriverName());
 
             $fields = $this->analyzeModelFields($modelClass, $table, $columns);
             $relationships = $this->analyzeModelRelationships($modelClass);
 
             $this->generateResourceClass($modelClass, $alias, $fields, $relationships);
 
-            $this->info("Ресурс успешно создан". $this->getResourceClassName($modelClass));
+            $this->info("Resource generated successfully!");
+            $this->info("API endpoint will be available at: /api/model-resources/{$alias}");
+            $this->info("Resource class: " . $this->getResourceClassName($modelClass));
+
         } catch (\Exception $e) {
-            $this->error("Ошибка: " . $e->getMessage());
+            $this->error("Error: " . $e->getMessage());
             $this->error($e->getTraceAsString());
             return 1;
         }
@@ -46,41 +50,50 @@ class GenerateModelResourceCommand extends Command
     private function analyzeModelFields(string $modelClass, string $table, array $columns): array
     {
         $fields = [];
+        $excludeFields = config('model-resource.exclude_fields', []);
 
         foreach ($columns as $column) {
-
-            $columnType = DB::getSchemaBuilder()->getColumnType($table, $column);
-            $defaultValue = $this->getDefaultValue($modelClass, $column);
-            $isFK = Str::endsWith($column, '_id');
-
-            // Определяем связанную модель для FK
-            $fkInfo = null;
-            if ($isFK) {
-                $relatedModel = $this->guessRelatedModel($modelClass, $column);
-                $relationType = $this->guessRelationType($modelClass, $column);
-
-                if ($relatedModel) {
-                    $fkInfo = [
-                        'model_alias' => Str::snake(Str::plural(class_basename($relatedModel))),
-                        'relation_type' => $relationType,
-                    ];
-                }
+            if (in_array($column, $excludeFields)) {
+                continue;
             }
 
-            $fields[$column] = [
-                'name' => $column,
-                'type' => $this->mapColumnType($columnType),
-                'default_value' => $defaultValue,
-                'validations' => [
-                    'is_required' => $this->isColumnRequired($table, $column),
-                ],
-                'is_selected_dict' => false,
-                'selected_dict_id' => null,
-                'is_sortable' => true,
-                'is_filtered' => true,
-                'is_FK' => $isFK,
-                'FK' => $fkInfo,
-            ];
+            try {
+                $columnType = DB::getSchemaBuilder()->getColumnType($table, $column);
+                $defaultValue = $this->getDefaultValue($modelClass, $column);
+                $isFK = Str::endsWith($column, '_id');
+
+                // Определяем связанную модель для FK
+                $fkInfo = null;
+                if ($isFK) {
+                    $relatedModel = $this->guessRelatedModel($modelClass, $column);
+                    $relationType = $this->guessRelationType($modelClass, $column);
+
+                    if ($relatedModel) {
+                        $fkInfo = [
+                            'model_alias' => Str::snake(Str::plural(class_basename($relatedModel))),
+                            'relation_type' => $relationType,
+                        ];
+                    }
+                }
+
+                $fields[$column] = [
+                    'name' => $column,
+                    'type' => $this->mapColumnType($columnType),
+                    'default_value' => $defaultValue,
+                    'validations' => [
+                        'is_required' => $this->isColumnRequired($table, $column),
+                    ],
+                    'is_selected_dict' => false,
+                    'selected_dict_id' => null,
+                    'is_sortable' => true,
+                    'is_filtered' => true,
+                    'is_FK' => $isFK,
+                    'FK' => $fkInfo,
+                ];
+            } catch (\Exception $e) {
+                $this->warn("Error analyzing field {$column}: " . $e->getMessage());
+                continue;
+            }
         }
 
         return $fields;
@@ -97,7 +110,7 @@ class GenerateModelResourceCommand extends Command
             if ($returnType && method_exists($returnType, 'getName')) {
                 $returnTypeName = $returnType->getName();
 
-                if (Str::contains($returnTypeName, ['BelongsTo', 'HasOne', 'HasMany', 'BelongsToMany'])) {
+                if (Str::contains($returnTypeName, ['BelongsTo', 'HasOne', 'HasMany', 'BelongsToMany', 'MorphTo', 'MorphOne', 'MorphMany'])) {
                     $methodName = $method->getName();
 
                     try {
@@ -115,7 +128,8 @@ class GenerateModelResourceCommand extends Command
                                 : null,
                         ];
                     } catch (\Exception $e) {
-                        // Скип
+                        // Skip if relationship cannot be resolved
+                        continue;
                     }
                 }
             }
@@ -196,7 +210,14 @@ class GenerateModelResourceCommand extends Command
 
     private function mapColumnType(string $columnType): string
     {
-        $fieldTypes = config('model-contract.field_types', []);
+        $fieldTypes = config('model-resource.field_types', [
+            'string' => ['varchar', 'char', 'text', 'tinytext', 'mediumtext', 'longtext', 'string'],
+            'integer' => ['int', 'bigint', 'mediumint', 'smallint', 'tinyint', 'integer'],
+            'float' => ['float', 'double', 'decimal', 'numeric', 'real'],
+            'boolean' => ['boolean', 'bool', 'tinyint(1)'],
+            'date' => ['date', 'datetime', 'timestamp', 'timestamptz'],
+            'json' => ['json', 'jsonb'],
+        ]);
 
         foreach ($fieldTypes as $type => $matches) {
             foreach ($matches as $match) {
@@ -211,47 +232,97 @@ class GenerateModelResourceCommand extends Command
 
     private function getDefaultValue(string $modelClass, string $column)
     {
-        $model = app($modelClass);
-        $casts = $model->getCasts();
+        try {
+            $model = app($modelClass);
+            $casts = $model->getCasts();
 
-        if (isset($casts[$column])) {
-            switch ($casts[$column]) {
-                case 'boolean':
-                case 'bool':
-                    return false;
-                case 'integer':
-                case 'int':
-                    return 0;
-                case 'float':
-                case 'double':
-                    return 0.0;
-                case 'array':
-                case 'json':
-                    return [];
-                default:
-                    return null;
+            if (isset($casts[$column])) {
+                switch ($casts[$column]) {
+                    case 'boolean':
+                    case 'bool':
+                        return false;
+                    case 'integer':
+                    case 'int':
+                        return 0;
+                    case 'float':
+                    case 'double':
+                    case 'decimal':
+                        return 0.0;
+                    case 'array':
+                    case 'json':
+                        return [];
+                    default:
+                        return null;
+                }
             }
-        }
 
-        return null;
+            return null;
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     private function isColumnRequired(string $table, string $column): bool
     {
-        $columnInfo = DB::selectOne(
-            "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE()
-            AND TABLE_NAME = ?
-            AND COLUMN_NAME = ?",
-            [$table, $column]
-        );
+        $connection = DB::connection();
+        $driver = $connection->getDriverName();
 
-        return $columnInfo && $columnInfo->IS_NULLABLE === 'NO';
+        try {
+            if ($driver === 'mysql') {
+                $columnInfo = DB::selectOne(
+                    "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = ?
+                    AND COLUMN_NAME = ?",
+                    [$table, $column]
+                );
+
+                return $columnInfo && $columnInfo->IS_NULLABLE === 'NO';
+
+            } elseif ($driver === 'pgsql') {
+                $schema = $connection->getConfig('schema') ?: 'public';
+
+                $columnInfo = DB::selectOne(
+                    "SELECT is_nullable FROM information_schema.columns
+                    WHERE table_schema = ?
+                    AND table_name = ?
+                    AND column_name = ?",
+                    [$schema, $table, $column]
+                );
+
+                return $columnInfo && $columnInfo->is_nullable === 'NO';
+
+            } elseif ($driver === 'sqlite') {
+                // Для SQLite
+                $tableInfo = DB::selectOne("PRAGMA table_info('{$table}') WHERE name = ?", [$column]);
+
+                return $tableInfo && $tableInfo->notnull == 1;
+
+            } elseif ($driver === 'sqlsrv') {
+                // Для SQL Server
+                $columnInfo = DB::selectOne(
+                    "SELECT is_nullable FROM sys.columns
+                    WHERE object_id = OBJECT_ID(?)
+                    AND name = ?",
+                    [$table, $column]
+                );
+
+                return $columnInfo && $columnInfo->is_nullable == 0;
+            }
+
+            // По умолчанию возвращаем false
+            return false;
+
+        } catch (\Exception $e) {
+            // В случае ошибки возвращаем false и логируем
+            $this->warn("Error checking if column is required: " . $e->getMessage());
+            return false;
+        }
     }
 
     private function getResourceClassName(string $modelClass): string
     {
-        $namespace = config('model-contract.namespace', 'App\\ModelResources');
+        $namespace = config('model-resource.namespace', 'App\\ModelResources');
         $className = class_basename($modelClass) . 'ContractingResource';
 
         return $namespace . '\\' . $className;
@@ -260,8 +331,8 @@ class GenerateModelResourceCommand extends Command
     private function generateResourceClass(string $modelClass, string $alias, array $fields, array $relationships): void
     {
         $className = class_basename($modelClass) . 'ContractingResource';
-        $namespace = config('model-contract.namespace', 'App\\ModelResources');
-        $path = config('model-contract.path', app_path('ModelResources'));
+        $namespace = config('model-resource.namespace', 'App\\ModelResources');
+        $path = config('model-resource.path', app_path('ModelResources'));
 
         if (!file_exists($path)) {
             mkdir($path, 0755, true);
@@ -431,7 +502,7 @@ STUB;
     private function registerResource(string $resourceClass): void
     {
         if (!class_exists($resourceClass)) {
-            require_once(config('model-contract.path', app_path('ModelResources')) .
+            require_once(config('model-resource.path', app_path('ModelResources')) .
                 '/' . class_basename($resourceClass) . '.php');
         }
 
