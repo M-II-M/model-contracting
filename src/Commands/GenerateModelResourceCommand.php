@@ -24,12 +24,13 @@ class GenerateModelResourceCommand extends Command
             $table = $model->getTable();
             $columns = Schema::getColumnListing($table);
 
-            $this->info("Generating resource for model: {$modelClass}");
-            $this->info("Table: {$table}");
-            $this->info("Alias: {$alias}");
-            $this->info("Database driver: " . DB::connection()->getDriverName());
+            $this->info("Генеррация ресурса для модели: {$modelClass}");
+            $this->info("Таблица: {$table}");
+            $this->info("Алиас: {$alias}");
 
             $fields = $this->analyzeModelFields($modelClass, $table, $columns);
+            $this->warn(json_encode($fields, JSON_PRETTY_PRINT));
+            dd($fields);
             $relationships = $this->analyzeModelRelationships($modelClass);
 
             $this->generateResourceClass($modelClass, $alias, $fields, $relationships);
