@@ -48,8 +48,8 @@ class ModelContractingServiceProvider extends ServiceProvider
 
     private function loadExistingResources(): void
     {
-        $path = app_path('ModelResources');
-        $namespace = 'App\\ModelResources';
+        $path = app_path('Contracting');
+        $namespace = 'App\\Contracting';
 
         if (!file_exists($path)) {
             return;

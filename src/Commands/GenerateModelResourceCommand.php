@@ -15,7 +15,7 @@ class GenerateModelResourceCommand extends Command
 
     protected $description = 'Command description';
 
-    private string $resourceNamespace = 'App\\ModelResources';
+    private string $resourceNamespace = 'App\\Contracting';
 
     public function handle()
     {
@@ -288,7 +288,7 @@ class GenerateModelResourceCommand extends Command
     private function generateResourceClass(string $modelClass, string $alias, array $fields, array $relationships): void
     {
         $className = class_basename($modelClass) . 'ContractingResource';
-        $path = app_path('ModelResources');
+        $path = app_path('Contracting');
 
         if (!file_exists($path)) {
             mkdir($path, 0755, true);
@@ -350,8 +350,7 @@ class GenerateModelResourceCommand extends Command
     private function registerResource(string $resourceClass): void
     {
         if (!class_exists($resourceClass)) {
-            require_once(config('model-resource.path', app_path('ModelResources')) .
-                '/' . class_basename($resourceClass) . '.php');
+            require_once(app_path('Contracting') . '/' . class_basename($resourceClass) . '.php');
         }
 
         $resourceClass::boot();
