@@ -2,6 +2,7 @@
 
 namespace MIIM\ModelContracting\Commands;
 
+use ReflectionClass;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -13,6 +14,8 @@ class GenerateModelResourceCommand extends Command
                                               {--alias= : Custom model alias}';
 
     protected $description = 'Command description';
+
+    private string $resourceNamespace = 'App\\ModelResources';
 
     public function handle()
     {
@@ -29,15 +32,13 @@ class GenerateModelResourceCommand extends Command
             $this->info("Алиас: {$alias}");
 
             $fields = $this->analyzeModelFields($modelClass, $table, $columns);
-            $this->warn(json_encode($fields, JSON_PRETTY_PRINT));
-            dd($fields);
             $relationships = $this->analyzeModelRelationships($modelClass);
 
             $this->generateResourceClass($modelClass, $alias, $fields, $relationships);
 
-            $this->info("Resource generated successfully!");
-            $this->info("API endpoint will be available at: /api/model-resources/{$alias}");
-            $this->info("Resource class: " . $this->getResourceClassName($modelClass));
+            $this->info("Генеррация ресурса завершена");
+            $this->info("API роуты для ресурса': /api/model-resources/{$alias}");
+            $this->info("Класс ресурса: " . $this->getResourceClassName($modelClass));
 
         } catch (\Exception $e) {
             $this->error("Error: " . $e->getMessage());
@@ -51,13 +52,8 @@ class GenerateModelResourceCommand extends Command
     private function analyzeModelFields(string $modelClass, string $table, array $columns): array
     {
         $fields = [];
-        $excludeFields = config('model-resource.exclude_fields', []);
 
         foreach ($columns as $column) {
-            if (in_array($column, $excludeFields)) {
-                continue;
-            }
-
             try {
                 $columnType = DB::getSchemaBuilder()->getColumnType($table, $column);
                 $defaultValue = $this->getDefaultValue($modelClass, $column);
@@ -92,7 +88,7 @@ class GenerateModelResourceCommand extends Command
                     'FK' => $fkInfo,
                 ];
             } catch (\Exception $e) {
-                $this->warn("Error analyzing field {$column}: " . $e->getMessage());
+                $this->warn("Ошибка анализа столбца {$column}: " . $e->getMessage());
                 continue;
             }
         }
@@ -103,6 +99,7 @@ class GenerateModelResourceCommand extends Command
     private function analyzeModelRelationships(string $modelClass): array
     {
         $relationships = [];
+        $allowedRelationTypes = ['BelongsTo', 'HasOne', 'HasMany', 'BelongsToMany', 'MorphTo', 'MorphOne', 'MorphMany'];
         $reflection = new ReflectionClass($modelClass);
 
         foreach ($reflection->getMethods() as $method) {
@@ -111,7 +108,7 @@ class GenerateModelResourceCommand extends Command
             if ($returnType && method_exists($returnType, 'getName')) {
                 $returnTypeName = $returnType->getName();
 
-                if (Str::contains($returnTypeName, ['BelongsTo', 'HasOne', 'HasMany', 'BelongsToMany', 'MorphTo', 'MorphOne', 'MorphMany'])) {
+                if (Str::contains($returnTypeName, $allowedRelationTypes)) {
                     $methodName = $method->getName();
 
                     try {
@@ -129,7 +126,8 @@ class GenerateModelResourceCommand extends Command
                                 : null,
                         ];
                     } catch (\Exception $e) {
-                        // Skip if relationship cannot be resolved
+                        // Скип если не распознали связь
+                        $this->warn("Ошибка анализа связи {$method}: " . $e->getMessage());
                         continue;
                     }
                 }
@@ -211,14 +209,14 @@ class GenerateModelResourceCommand extends Command
 
     private function mapColumnType(string $columnType): string
     {
-        $fieldTypes = config('model-resource.field_types', [
+        $fieldTypes = [
             'string' => ['varchar', 'char', 'text', 'tinytext', 'mediumtext', 'longtext', 'string'],
             'integer' => ['int', 'bigint', 'mediumint', 'smallint', 'tinyint', 'integer'],
             'float' => ['float', 'double', 'decimal', 'numeric', 'real'],
             'boolean' => ['boolean', 'bool', 'tinyint(1)'],
             'date' => ['date', 'datetime', 'timestamp', 'timestamptz'],
             'json' => ['json', 'jsonb'],
-        ]);
+        ];
 
         foreach ($fieldTypes as $type => $matches) {
             foreach ($matches as $match) {
@@ -231,7 +229,7 @@ class GenerateModelResourceCommand extends Command
         return 'string';
     }
 
-    private function getDefaultValue(string $modelClass, string $column)
+    private function getDefaultValue(string $modelClass, string $column): mixed
     {
         try {
             $model = app($modelClass);
@@ -265,93 +263,45 @@ class GenerateModelResourceCommand extends Command
 
     private function isColumnRequired(string $table, string $column): bool
     {
-        $connection = DB::connection();
-        $driver = $connection->getDriverName();
-
         try {
-            if ($driver === 'mysql') {
-                $columnInfo = DB::selectOne(
-                    "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = DATABASE()
-                    AND TABLE_NAME = ?
-                    AND COLUMN_NAME = ?",
-                    [$table, $column]
-                );
+            // Проверяем, является ли колонка nullable
+            $columns = Schema::getColumns($table);
 
-                return $columnInfo && $columnInfo->IS_NULLABLE === 'NO';
-
-            } elseif ($driver === 'pgsql') {
-                $schema = $connection->getConfig('schema') ?: 'public';
-
-                $columnInfo = DB::selectOne(
-                    "SELECT is_nullable FROM information_schema.columns
-                    WHERE table_schema = ?
-                    AND table_name = ?
-                    AND column_name = ?",
-                    [$schema, $table, $column]
-                );
-
-                return $columnInfo && $columnInfo->is_nullable === 'NO';
-
-            } elseif ($driver === 'sqlite') {
-                // Для SQLite
-                $tableInfo = DB::selectOne("PRAGMA table_info('{$table}') WHERE name = ?", [$column]);
-
-                return $tableInfo && $tableInfo->notnull == 1;
-
-            } elseif ($driver === 'sqlsrv') {
-                // Для SQL Server
-                $columnInfo = DB::selectOne(
-                    "SELECT is_nullable FROM sys.columns
-                    WHERE object_id = OBJECT_ID(?)
-                    AND name = ?",
-                    [$table, $column]
-                );
-
-                return $columnInfo && $columnInfo->is_nullable == 0;
+            foreach ($columns as $col) {
+                if ($col['name'] === $column) {
+                    return !$col['nullable'];
+                }
             }
 
-            // По умолчанию возвращаем false
             return false;
-
         } catch (\Exception $e) {
-            // В случае ошибки возвращаем false и логируем
-            $this->warn("Error checking if column is required: " . $e->getMessage());
+            $this->warn("Ошибка анализа столбца: " . $e->getMessage());
             return false;
         }
     }
 
     private function getResourceClassName(string $modelClass): string
     {
-        $namespace = config('model-resource.namespace', 'App\\ModelResources');
-        $className = class_basename($modelClass) . 'ContractingResource';
-
-        return $namespace . '\\' . $className;
+        return $this->resourceNamespace . '\\' . class_basename($modelClass) . 'ContractingResource';
     }
 
     private function generateResourceClass(string $modelClass, string $alias, array $fields, array $relationships): void
     {
         $className = class_basename($modelClass) . 'ContractingResource';
-        $namespace = config('model-resource.namespace', 'App\\ModelResources');
-        $path = config('model-resource.path', app_path('ModelResources'));
+        $path = app_path('ModelResources');
 
         if (!file_exists($path)) {
             mkdir($path, 0755, true);
         }
 
         $stubPath = __DIR__ . '/../Stubs/ModelResource.stub';
-        if (!file_exists($stubPath)) {
-            // Создаем stub на лету
-            $stub = $this->getStubContent();
-        } else {
-            $stub = file_get_contents($stubPath);
-        }
+        $stub = file_get_contents($stubPath);
 
         $fieldsString = $this->formatArrayForPhp($fields, 2);
         $relationshipsString = $this->formatArrayForPhp($relationships, 2);
 
         $replacements = [
-            '{{namespace}}' => $namespace,
+            '{{namespace}}' => $this->resourceNamespace,
             '{{className}}' => $className,
             '{{modelClass}}' => $modelClass,
             '{{modelAlias}}' => $alias,
@@ -367,7 +317,7 @@ class GenerateModelResourceCommand extends Command
 
         file_put_contents($path . '/' . $className . '.php', $content);
 
-        $this->registerResource($namespace . '\\' . $className);
+        $this->registerResource($this->resourceNamespace . '\\' . $className);
     }
 
     private function formatArrayForPhp(array $array, int $indentLevel = 0): string
@@ -394,110 +344,7 @@ class GenerateModelResourceCommand extends Command
             return '[]';
         }
 
-        $result = "[\n" . $indent . '    ' . implode("\n" . $indent . '    ', $lines) . "\n" . $indent . "]";
-        return $result;
-    }
-
-    private function getStubContent(): string
-    {
-        return <<<'STUB'
-<?php
-
-namespace {{namespace}};
-
-use Vendor\ModelResourceManager\Contracts\ModelResourceInterface;
-use Vendor\ModelResourceManager\Services\ModelRegistry;
-
-class {{className}} implements ModelResourceInterface
-{
-    protected static string $modelClass = '{{modelClass}}';
-    protected static string $modelAlias = '{{modelAlias}}';
-
-    protected static array $fields = {{fields}};
-
-    protected static array $relationships = {{relationships}};
-
-    public static function getModelClass(): string
-    {
-        return static::$modelClass;
-    }
-
-    public static function getModelAlias(): string
-    {
-        return static::$modelAlias;
-    }
-
-    public static function getFields(): array
-    {
-        return static::$fields;
-    }
-
-    public static function getField(string $fieldName): ?array
-    {
-        return static::$fields[$fieldName] ?? null;
-    }
-
-    public static function updateField(string $fieldName, array $config): void
-    {
-        if (isset(static::$fields[$fieldName])) {
-            static::$fields[$fieldName] = array_merge(
-                static::$fields[$fieldName],
-                $config
-            );
-        }
-    }
-
-    public static function getRelationships(): array
-    {
-        return static::$relationships;
-    }
-
-    public static function getValidationRules(): array
-    {
-        $rules = [];
-
-        foreach (static::$fields as $fieldName => $fieldConfig) {
-            $fieldRules = [];
-
-            if ($fieldConfig['validations']['is_required']) {
-                $fieldRules[] = 'required';
-            }
-
-            switch ($fieldConfig['type']) {
-                case 'integer':
-                    $fieldRules[] = 'integer';
-                    break;
-                case 'float':
-                    $fieldRules[] = 'numeric';
-                    break;
-                case 'boolean':
-                    $fieldRules[] = 'boolean';
-                    break;
-                case 'date':
-                    $fieldRules[] = 'date';
-                    break;
-                case 'json':
-                    $fieldRules[] = 'array';
-                    break;
-            }
-
-            if (!empty($fieldRules)) {
-                $rules[$fieldName] = $fieldRules;
-            }
-        }
-
-        return $rules;
-    }
-
-    public static function boot(): void
-    {
-        ModelRegistry::register(static::class);
-    }
-}
-
-// Автоматическая регистрация ресурса
-{{className}}::boot();
-STUB;
+        return "[\n" . $indent . '    ' . implode("\n" . $indent . '    ', $lines) . "\n" . $indent . "]";
     }
 
     private function registerResource(string $resourceClass): void

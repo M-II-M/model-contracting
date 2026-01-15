@@ -1,0 +1,85 @@
+<?php
+
+namespace {{namespace}};
+
+class {{className}}
+{
+    protected static string $modelClass = '{{modelClass}}';
+    protected static string $modelAlias = '{{modelAlias}}';
+
+    protected static array $fields = {{fields}};
+
+    protected static array $relationships = {{relationships}};
+
+    public static function getModelClass(): string
+    {
+        return static::$modelClass;
+    }
+
+    public static function getModelAlias(): string
+    {
+        return static::$modelAlias;
+    }
+
+    public static function getFields(): array
+    {
+        return static::$fields;
+    }
+
+    public static function getField(string $fieldName): ?array
+    {
+        return static::$fields[$fieldName] ?? null;
+    }
+
+    public static function updateField(string $fieldName, array $config): void
+    {
+        if (isset(static::$fields[$fieldName])) {
+            static::$fields[$fieldName] = array_merge(
+                static::$fields[$fieldName],
+                $config
+            );
+        }
+    }
+
+    public static function getRelationships(): array
+    {
+        return static::$relationships;
+    }
+
+    public static function getValidationRules(): array
+    {
+        $rules = [];
+
+        foreach (static::$fields as $fieldName => $fieldConfig) {
+            $fieldRules = [];
+
+            if ($fieldConfig['validations']['is_required']) {
+                $fieldRules[] = 'required';
+            }
+
+            switch ($fieldConfig['type']) {
+                case 'integer':
+                    $fieldRules[] = 'integer';
+                    break;
+                case 'float':
+                    $fieldRules[] = 'numeric';
+                    break;
+                case 'boolean':
+                    $fieldRules[] = 'boolean';
+                    break;
+                case 'date':
+                    $fieldRules[] = 'date';
+                    break;
+                case 'json':
+                    $fieldRules[] = 'array';
+                    break;
+            }
+
+            if (!empty($fieldRules)) {
+                $rules[$fieldName] = $fieldRules;
+            }
+        }
+
+        return $rules;
+    }
+}

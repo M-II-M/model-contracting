@@ -40,10 +40,6 @@ class ModelContractingServiceProvider extends ServiceProvider
             $this->commands([
                 GenerateModelResourceCommand::class,
             ]);
-
-            $this->publishes([
-                __DIR__.'/../config/model-contract.php' => config_path('model-contract.php'),
-            ], 'model-contract-config');
         }
 
         // Автоматическая загрузка существующих ресурсов
@@ -52,13 +48,12 @@ class ModelContractingServiceProvider extends ServiceProvider
 
     private function loadExistingResources(): void
     {
-        $path = config('model-contract.path', app_path('ModelResources'));
+        $path = app_path('ModelResources');
+        $namespace = 'App\\ModelResources';
 
         if (!file_exists($path)) {
             return;
         }
-
-        $namespace = config('model-contract.namespace', 'App\\ModelResources');
 
         foreach (glob($path . '/*.php') as $file) {
             $className = pathinfo($file, PATHINFO_FILENAME);
