@@ -12,24 +12,9 @@ class ModelContractingServiceProvider extends ServiceProvider
 {
     public function register()
     {
-        $this->mergeConfigFrom(
-            __DIR__.'/../config/model-contract.php', 'model-contract'
-        );
-
-        $this->app->singleton(ModelRegistryService::class, function ($app) {
-            return new ModelRegistryService();
-        });
-
-        $this->app->singleton(ModelMetaService::class, function ($app) {
-            return new ModelMetaService($app->make(ModelRegistryService::class));
-        });
-
-        $this->app->singleton(ModelApiService::class, function ($app) {
-            return new ModelApiService(
-                $app->make(ModelMetaService::class),
-                $app->make(ModelRegistryService::class)
-            );
-        });
+        $this->app->singleton(Services\ModelRegistryService::class);
+        $this->app->singleton(Services\ModelMetaService::class);
+        $this->app->singleton(Services\ModelApiService::class);
     }
 
     public function boot()
@@ -55,11 +40,11 @@ class ModelContractingServiceProvider extends ServiceProvider
             return;
         }
 
-        foreach (glob($path . '/*.php') as $file) {
+        foreach (glob($path . '/*ContractingResource.php') as $file) {
             $className = pathinfo($file, PATHINFO_FILENAME);
             $fullClassName = $namespace . '\\' . $className;
 
-            if (class_exists($fullClassName)) {
+            if (class_exists($fullClassName) && method_exists($fullClassName, 'boot')) {
                 $fullClassName::boot();
             }
         }

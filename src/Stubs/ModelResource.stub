@@ -2,7 +2,9 @@
 
 namespace {{namespace}};
 
-class {{className}}
+use Illuminate\Support\ServiceProvider;
+
+class {{className}} extends ServiceProvider
 {
     protected static string $modelClass = '{{modelClass}}';
     protected static string $modelAlias = '{{modelAlias}}';
@@ -10,6 +12,12 @@ class {{className}}
     protected static array $fields = {{fields}};
 
     protected static array $relationships = {{relationships}};
+
+    public static function boot(): void
+    {
+        $registry = app(\MIIM\ModelContracting\Services\ModelRegistryService::class);
+        $registry->register(static::class);
+    }
 
     public static function getModelClass(): string
     {
@@ -34,10 +42,19 @@ class {{className}}
     public static function updateField(string $fieldName, array $config): void
     {
         if (isset(static::$fields[$fieldName])) {
-            static::$fields[$fieldName] = array_merge(
-                static::$fields[$fieldName],
-                $config
-            );
+            // Обновляем только разрешенные поля
+            $allowedFields = [
+                'is_selected_dict',
+                'selected_dict_id',
+                'is_sortable',
+                'is_filtered',
+            ];
+
+            foreach ($allowedFields as $field) {
+                if (array_key_exists($field, $config)) {
+                    static::$fields[$fieldName][$field] = $config[$field];
+                }
+            }
         }
     }
 
@@ -73,6 +90,8 @@ class {{className}}
                 case 'json':
                     $fieldRules[] = 'array';
                     break;
+                default:
+                    $fieldRules[] = 'string';
             }
 
             if (!empty($fieldRules)) {
@@ -81,5 +100,18 @@ class {{className}}
         }
 
         return $rules;
+    }
+
+    public static function getDefaultValues(): array
+    {
+        $defaults = [];
+
+        foreach (static::$fields as $fieldName => $fieldConfig) {
+            if ($fieldConfig['default_value'] !== null) {
+                $defaults[$fieldName] = $fieldConfig['default_value'];
+            }
+        }
+
+        return $defaults;
     }
 }
