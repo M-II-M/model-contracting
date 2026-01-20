@@ -11,8 +11,6 @@ class {{className}} extends ServiceProvider
 
     protected static array $fields = {{fields}};
 
-    protected static array $relationships = {{relationships}};
-
     public static function boot(): void
     {
         $registry = app(\MIIM\ModelContracting\Services\ModelRegistryService::class);
@@ -57,11 +55,6 @@ class {{className}} extends ServiceProvider
                 }
             }
         }
-    }
-
-    public static function getRelationships(): array
-    {
-        return static::$relationships;
     }
 
     public static function getValidationRules(): array

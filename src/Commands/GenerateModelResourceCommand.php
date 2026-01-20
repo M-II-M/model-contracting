@@ -32,9 +32,8 @@ class GenerateModelResourceCommand extends Command
             $this->info("Alias: {$alias}");
 
             $fields = $this->analyzeModelFields($modelClass, $table, $columns);
-            $relationships = $this->analyzeModelRelationships($modelClass);
 
-            $this->generateResourceClass($modelClass, $alias, $fields, $relationships);
+            $this->generateResourceClass($modelClass, $alias, $fields);
 
             $this->info("Resource generation completed successfully!");
             $this->info("Resource class: " . $this->getResourceClassName($modelClass));
@@ -48,6 +47,13 @@ class GenerateModelResourceCommand extends Command
         return 0;
     }
 
+    /**
+     * Анализ полей модели
+     * @param string $modelClass класс модели
+     * @param string $table табилца модели
+     * @param array $columns столбцы
+     * @return array
+     */
     private function analyzeModelFields(string $modelClass, string $table, array $columns): array
     {
         $fields = [];
@@ -61,13 +67,12 @@ class GenerateModelResourceCommand extends Command
                 // Определяем связанную модель для FK
                 $fkInfo = null;
                 if ($isFK) {
-                    $relatedModel = $this->guessRelatedModel($modelClass, $column);
-                    $relationType = $this->guessRelationType($modelClass, $column);
+                    $relationInfo = $this->guessRelationInfo($modelClass, $column);
 
-                    if ($relatedModel) {
+                    if ($relationInfo) {
                         $fkInfo = [
-                            'model_alias' => Str::snake(Str::plural(class_basename($relatedModel))),
-                            'relation_type' => $relationType,
+                            'model_alias' => Str::snake(Str::plural(class_basename($relationInfo['model']))),
+                            'relation_type' => $relationInfo['type'],
                         ];
                     }
                 }
@@ -100,53 +105,40 @@ class GenerateModelResourceCommand extends Command
         return $fields;
     }
 
-    private function analyzeModelRelationships(string $modelClass): array
+    /**
+     * Определение связанной модели и типа связи
+     * @param string $modelClass класс модели
+     * @param string $column столбец
+     * @return array|null ['model' => string, 'type' => string] или null
+     * @throws \ReflectionException
+     */
+    private function guessRelationInfo(string $modelClass, string $column): ?array
     {
-        $relationships = [];
+        // Анализ класса модели через ReflectionClass
         $reflection = new ReflectionClass($modelClass);
 
         foreach ($reflection->getMethods() as $method) {
-            if ($method->isPublic() && !$method->isStatic() && $method->getNumberOfParameters() === 0) {
-                try {
-                    $modelInstance = app($modelClass);
-                    $returnValue = $method->invoke($modelInstance);
-
-                    if (is_object($returnValue) && method_exists($returnValue, 'getRelated')) {
-                        $relationType = class_basename(get_class($returnValue));
-                        $relatedModel = get_class($returnValue->getRelated());
-
-                        $relationships[$method->getName()] = [
-                            'type' => $relationType,
-                            'related_model' => $relatedModel,
-                            'related_model_alias' => Str::snake(Str::plural(class_basename($relatedModel))),
-                        ];
-                    }
-                } catch (\Exception $e) {
-                    // Skip if not a relationship method
-                    continue;
-                }
-            }
-        }
-
-        return $relationships;
-    }
-
-    private function guessRelatedModel(string $modelClass, string $column): ?string
-    {
-        $reflection = new ReflectionClass($modelClass);
-
-        foreach ($reflection->getMethods() as $method) {
+            //Отбираем только публичный и не статичные методы
             if ($method->isPublic() && !$method->isStatic()) {
                 try {
+                    // Попытка вызвать метод
                     $modelInstance = app($modelClass);
                     $returnValue = $method->invoke($modelInstance);
 
+                    // Проверка является ли результат вызова метода связью
+                    //is_object($returnValue) - является ли объектом
+                    // getForeignKeyName - имя FK
+                    // getRelated - связанная модель
                     if (is_object($returnValue) &&
                         method_exists($returnValue, 'getForeignKeyName') &&
                         method_exists($returnValue, 'getRelated')) {
 
+                        // Получение имени FK и столбца
                         if ($returnValue->getForeignKeyName() === $column) {
-                            return get_class($returnValue->getRelated());
+                            return [
+                                'model' => get_class($returnValue->getRelated()),
+                                'type' => strtolower(class_basename(get_class($returnValue))),
+                            ];
                         }
                     }
                 } catch (\Exception $e) {
@@ -155,56 +147,21 @@ class GenerateModelResourceCommand extends Command
             }
         }
 
-        // Try to guess by column name
+        // Попытка определить только модель по имени столбца при fallback
         $relatedModelName = Str::studly(Str::replaceLast('_id', '', $column));
-        $possibleNamespaces = [
-            'App\\Models\\',
-            'App\\',
-        ];
+        $possibleNamespaces = ['App\\Models\\', 'App\\'];
 
         foreach ($possibleNamespaces as $namespace) {
             $className = $namespace . $relatedModelName;
             if (class_exists($className)) {
-                return $className;
+                return [
+                    'model' => $className,
+                    'type' => 'belongsTo', // Тип по умолчанию для fallback
+                ];
             }
         }
 
         return null;
-    }
-
-    /**
-     * Определение связей модели
-     * @param string $modelClass класс модели
-     * @param string $column столбец
-     * @return string
-     * @throws \ReflectionException
-     */
-    private function guessRelationType(string $modelClass, string $column): string
-    {
-        // используется для анализа класса модели
-        $reflection = new ReflectionClass($modelClass);
-
-        foreach ($reflection->getMethods() as $method) {
-            if ($method->isPublic() && !$method->isStatic()) {
-                try {
-                    $modelInstance = app($modelClass);
-                    $returnValue = $method->invoke($modelInstance);
-
-                    if (is_object($returnValue) &&
-                        method_exists($returnValue, 'getForeignKeyName') &&
-                        method_exists($returnValue, 'getRelated')) {
-
-                        if ($returnValue->getForeignKeyName() === $column) {
-                            return strtolower(class_basename(get_class($returnValue)));
-                        }
-                    }
-                } catch (\Exception $e) {
-                    continue;
-                }
-            }
-        }
-
-        return 'belongsTo';
     }
 
     /**
@@ -243,21 +200,6 @@ class GenerateModelResourceCommand extends Command
     private function getDefaultValue(string $modelClass, string $column): mixed
     {
         try {
-            // TODO возможно понадобиться
-//            // Check database default
-//            $columnInfo = DB::selectOne("
-//                SELECT COLUMN_DEFAULT
-//                FROM INFORMATION_SCHEMA.COLUMNS
-//                WHERE TABLE_NAME = ?
-//                AND COLUMN_NAME = ?
-//                AND TABLE_SCHEMA = DATABASE()
-//            ", [$table, $column]);
-//
-//            if ($columnInfo && $columnInfo->COLUMN_DEFAULT !== null) {
-//                return $columnInfo->COLUMN_DEFAULT;
-//            }
-
-            // Check model casts
             $model = app($modelClass);
             $casts = $model->getCasts();
 
@@ -316,10 +258,8 @@ class GenerateModelResourceCommand extends Command
      * @param string $modelClass класс модели
      * @param string $alias алиас модели
      * @param array $fields поля модели
-     * @param array $relationships связи модели
-     * @return void
      */
-    private function generateResourceClass(string $modelClass, string $alias, array $fields, array $relationships): void
+    private function generateResourceClass(string $modelClass, string $alias, array $fields): void
     {
         $className = class_basename($modelClass) . 'ContractingResource';
 
@@ -334,7 +274,6 @@ class GenerateModelResourceCommand extends Command
         $stub = file_get_contents($stubPath);
 
         $fieldsString = $this->formatArrayForPhp($fields, 2);
-        $relationshipsString = $this->formatArrayForPhp($relationships, 2);
 
         $replacements = [
             '{{namespace}}' => $namespace,
@@ -342,7 +281,6 @@ class GenerateModelResourceCommand extends Command
             '{{modelClass}}' => $modelClass,
             '{{modelAlias}}' => $alias,
             '{{fields}}' => $fieldsString,
-            '{{relationships}}' => $relationshipsString,
         ];
 
         $content = str_replace(
