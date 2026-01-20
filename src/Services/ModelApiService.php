@@ -9,22 +9,24 @@ use Illuminate\Validation\ValidationException;
 class ModelApiService
 {
     public function __construct(
-        private ModelMetaService $metaService,
         private ModelRegistryService $registryService
     ) {}
 
+    /**
+     * Созадние записи в модели
+     * @param string $alias алиас модели
+     * @param array $data данные для создания записи
+     * @return array[]
+     * @throws \Exception
+     */
     public function create(string $alias, array $data): array
     {
         $modelClass = $this->registryService->getModelClassByAlias($alias);
 
-        if (!$modelClass) {
-            throw new \Exception("Model with alias '{$alias}' не найдена");
-        }
+        $this->isModelWithAliasExist($modelClass, $alias);
 
-        // Валидация данных
         $this->validateData($alias, $data, $modelClass);
 
-        // Создание модели
         $model = new $modelClass();
 
         foreach ($data as $field => $value) {
@@ -36,13 +38,22 @@ class ModelApiService
         return $this->formatResponse($model);
     }
 
+    /**
+     * Получение данных модели c пагинацей:
+     * - получения конкретных записей по id
+     * - получение с фильтрацией
+     * - получение с сортировкой
+     * @param string $alias алиас модели
+     * @param array|null $ids массив с id для выборки
+     * @param array $params параметры запроса (фильтры, сортировка, пагинация)
+     * @return array|array[]
+     * @throws \Exception
+     */
     public function read(string $alias, ?array $ids = null, array $params = []): array
     {
         $modelClass = $this->registryService->getModelClassByAlias($alias);
 
-        if (!$modelClass) {
-            throw new \Exception("Model with alias '{$alias}' не найдена");
-        }
+        $this->isModelWithAliasExist($modelClass, $alias);
 
         $query = $modelClass::query();
 
@@ -51,7 +62,7 @@ class ModelApiService
             $query->whereIn('id', $ids);
         }
 
-        // Применение фильтров
+        // Фильтрация
         if (isset($params['filter']) && is_array($params['filter'])) {
             $filterableFields = $this->registryService->getFilterableFields($alias);
 
@@ -90,7 +101,6 @@ class ModelApiService
             ];
         }
 
-        // Если нет пагинации, возвращаем все записи
         $results = $query->get();
 
         return [
@@ -98,13 +108,19 @@ class ModelApiService
         ];
     }
 
+    /**
+     * Обновление одной/нескольких записей модели
+     * @param string $alias алиас модели
+     * @param array $ids массив id записей для обновления
+     * @param array $data массив данных для обновления
+     * @return void
+     * @throws \Exception
+     */
     public function update(string $alias, array $ids, array $data): void
     {
         $modelClass = $this->registryService->getModelClassByAlias($alias);
 
-        if (!$modelClass) {
-            throw new \Exception("Model with alias '{$alias}' не найдена");
-        }
+        $this->isModelWithAliasExist($modelClass, $alias);
 
         // Валидация данных для обновления
         $this->validateData($alias, $data, $modelClass, false);
@@ -120,32 +136,35 @@ class ModelApiService
         }
     }
 
+    /**
+     * Удаление одной/нескольких записей модели
+     * @param string $alias алиас модели
+     * @param array $ids массив id записей для удаления
+     * @return void
+     * @throws \Exception
+     */
     public function delete(string $alias, array $ids): void
     {
         $modelClass = $this->registryService->getModelClassByAlias($alias);
 
-        if (!$modelClass) {
-            throw new \Exception("Model with alias '{$alias}' не найдена");
-        }
+        $this->isModelWithAliasExist($modelClass, $alias);
 
-        // Проверяем Soft Deletes
-        if (method_exists($modelClass, 'bootSoftDeletes')) {
-            // Если есть soft deletes, помечаем как удаленные
-            $models = $modelClass::whereIn('id', $ids)->get();
-            foreach ($models as $model) {
-                $model->delete();
-            }
-        } else {
-            // Иначе удаляем физически
-            $modelClass::destroy($ids);
-        }
+        $modelClass::destroy($ids);
     }
 
-    private function validateData(string $alias, array $data, string $modelClass, bool $isCreate = true): void
+    /**
+     * Построение валидации для конкретной модели
+     * @param string $alias алиас модели
+     * @param array $data данные для валидации
+     * @param bool $isCreate используются ли данные для создания записи в модели
+     * @return void
+     */
+    private function validateData(string $alias, array $data, bool $isCreate = true): void
     {
         $resource = $this->registryService->getResourceByAlias($alias);
-        $rules = [];
 
+        // Построение правил валидации под конкретную модель
+        $rules = [];
         foreach ($resource['fields'] as $fieldName => $fieldConfig) {
             if (isset($data[$fieldName]) || $isCreate) {
                 $fieldRules = [];
@@ -156,25 +175,14 @@ class ModelApiService
                     $fieldRules[] = 'sometimes';
                 }
 
-                switch ($fieldConfig['type']) {
-                    case 'integer':
-                        $fieldRules[] = 'integer';
-                        break;
-                    case 'float':
-                        $fieldRules[] = 'numeric';
-                        break;
-                    case 'boolean':
-                        $fieldRules[] = 'boolean';
-                        break;
-                    case 'date':
-                        $fieldRules[] = 'date';
-                        break;
-                    case 'json':
-                        $fieldRules[] = 'array';
-                        break;
-                    default:
-                        $fieldRules[] = 'string';
-                }
+                $fieldRules[] = match ($fieldConfig['type']) {
+                    'integer' => 'integer',
+                    'float' => 'numeric',
+                    'boolean' => 'boolean',
+                    'date' => 'date',
+                    'json' => 'array',
+                    default => 'string',
+                };
 
                 $rules[$fieldName] = $fieldRules;
             }
@@ -187,6 +195,11 @@ class ModelApiService
         }
     }
 
+    /**
+     * Форматирование ответа для запросов
+     * @param Model $model модель
+     * @return array[]
+     */
     private function formatResponse(Model $model): array
     {
         return [
@@ -194,6 +207,11 @@ class ModelApiService
         ];
     }
 
+    /**
+     * Форматирование ответа для запросов с несколькики записями модели
+     * @param $models
+     * @return array
+     */
     private function formatMultipleResponse($models): array
     {
         $result = [];
@@ -205,22 +223,15 @@ class ModelApiService
         return $result;
     }
 
+    /**
+     * Форматирование данных модели в массив
+     * @param Model $model модель
+     * @return array
+     */
     private function formatModel(Model $model): array
     {
         $data = $model->toArray();
 
-        // Форматируем даты
-        $dateFormat = config('model-contracting.date_format', 'd.m.Y H:i');
-
-        if (isset($data['created_at']) && $data['created_at']) {
-            $data['created_at'] = $model->created_at->format($dateFormat);
-        }
-
-        if (isset($data['updated_at']) && $data['updated_at']) {
-            $data['updated_at'] = $model->updated_at->format($dateFormat);
-        }
-
-        // Добавляем id в начало массива
         $formattedData = ['id' => $model->id];
 
         foreach ($data as $key => $value) {
@@ -230,5 +241,12 @@ class ModelApiService
         }
 
         return $formattedData;
+    }
+
+    private function isModelWithAliasExist(?string $modelClass, string $alias): void
+    {
+        if (!$modelClass) {
+            throw new \Exception("Модель с алиасом '{$alias}' не найдена");
+        }
     }
 }
