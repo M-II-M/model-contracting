@@ -2,8 +2,6 @@
 
 namespace MIIM\ModelContracting\Services;
 
-use Illuminate\Support\Collection;
-
 class ModelRegistryService
 {
     private array $registeredResources = [];
@@ -69,7 +67,7 @@ class ModelRegistryService
         $resource = $this->getResourceByAlias($alias);
         if (!$resource) return [];
 
-        return array_filter($resource['fields'], fn($field) => $field['is_sortable'] ?? false);
+        return array_filter($resource['fields'], fn($field) => $field['is_sortable'] ?? true);
     }
 
     public function getFilterableFields(string $alias): array
@@ -77,7 +75,15 @@ class ModelRegistryService
         $resource = $this->getResourceByAlias($alias);
         if (!$resource) return [];
 
-        return array_filter($resource['fields'], fn($field) => $field['is_filtered'] ?? false);
+        return array_filter($resource['fields'], fn($field) => $field['is_filtered'] ?? true);
+    }
+
+    public function getEditableFields(string $alias): array
+    {
+        $resource = $this->getResourceByAlias($alias);
+        if (!$resource) return [];
+
+        return array_filter($resource['fields'], fn($field) => $field['is_editable'] ?? ($field['name'] !== 'id'));
     }
 
     public function getRequiredFields(string $alias): array

@@ -18,7 +18,15 @@ class ModelContractingController
     {
         try {
             $metadata = $this->metaService->getModelMetadata($alias);
-            return response()->json($metadata);
+
+            // Возвращаем только необходимые поля
+            $response = [
+                'is_deletable' => true,
+                'is_editable' => true,
+                'fields' => $metadata['fields'],
+            ];
+
+            return response()->json($response);
         } catch (\Exception $e) {
             return response()->json([
                 'error' => $e->getMessage()
@@ -46,11 +54,13 @@ class ModelContractingController
             if ($ids) {
                 $ids = is_array($ids) ? $ids : explode(',', $ids);
                 $result = $this->apiService->read($alias, $ids, $params);
+
+                return response()->json($result);
             } else {
                 $result = $this->apiService->read($alias, null, $params);
-            }
 
-            return response()->json($result);
+                return response()->json($result);
+            }
         } catch (\Exception $e) {
             return response()->json([
                 'error' => $e->getMessage()

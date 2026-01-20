@@ -3,7 +3,6 @@
 namespace MIIM\ModelContracting\Services;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -19,7 +18,7 @@ class ModelApiService
         $modelClass = $this->registryService->getModelClassByAlias($alias);
 
         if (!$modelClass) {
-            throw new \Exception("Model with alias '{$alias}' not found");
+            throw new \Exception("Model with alias '{$alias}' не найдена");
         }
 
         // Валидация данных
@@ -42,7 +41,7 @@ class ModelApiService
         $modelClass = $this->registryService->getModelClassByAlias($alias);
 
         if (!$modelClass) {
-            throw new \Exception("Model with alias '{$alias}' not found");
+            throw new \Exception("Model with alias '{$alias}' не найдена");
         }
 
         $query = $modelClass::query();
@@ -87,7 +86,7 @@ class ModelApiService
                     'totalRecords' => $paginator->total(),
                     'totalPages' => $paginator->lastPage(),
                 ],
-                'data' => $paginator->items(),
+                'data' => $this->formatMultipleResponse($paginator->items()),
             ];
         }
 
@@ -95,7 +94,7 @@ class ModelApiService
         $results = $query->get();
 
         return [
-            'data' => $results->toArray()
+            'data' => $this->formatMultipleResponse($results)
         ];
     }
 
@@ -104,7 +103,7 @@ class ModelApiService
         $modelClass = $this->registryService->getModelClassByAlias($alias);
 
         if (!$modelClass) {
-            throw new \Exception("Model with alias '{$alias}' not found");
+            throw new \Exception("Model with alias '{$alias}' не найдена");
         }
 
         // Валидация данных для обновления
@@ -126,10 +125,20 @@ class ModelApiService
         $modelClass = $this->registryService->getModelClassByAlias($alias);
 
         if (!$modelClass) {
-            throw new \Exception("Model with alias '{$alias}' not found");
+            throw new \Exception("Model with alias '{$alias}' не найдена");
         }
 
-        $modelClass::destroy($ids);
+        // Проверяем Soft Deletes
+        if (method_exists($modelClass, 'bootSoftDeletes')) {
+            // Если есть soft deletes, помечаем как удаленные
+            $models = $modelClass::whereIn('id', $ids)->get();
+            foreach ($models as $model) {
+                $model->delete();
+            }
+        } else {
+            // Иначе удаляем физически
+            $modelClass::destroy($ids);
+        }
     }
 
     private function validateData(string $alias, array $data, string $modelClass, bool $isCreate = true): void
@@ -163,6 +172,8 @@ class ModelApiService
                     case 'json':
                         $fieldRules[] = 'array';
                         break;
+                    default:
+                        $fieldRules[] = 'string';
                 }
 
                 $rules[$fieldName] = $fieldRules;
@@ -179,14 +190,45 @@ class ModelApiService
     private function formatResponse(Model $model): array
     {
         return [
-            'data' => array_merge(
-                [
-                    'id' => $model->id,
-                    'created_at' => $model->created_at?->format('d.m.Y H:i'),
-                    'updated_at' => $model->updated_at?->format('d.m.Y H:i'),
-                ],
-                $model->toArray()
-            )
+            'data' => $this->formatModel($model)
         ];
+    }
+
+    private function formatMultipleResponse($models): array
+    {
+        $result = [];
+
+        foreach ($models as $model) {
+            $result[] = $this->formatModel($model);
+        }
+
+        return $result;
+    }
+
+    private function formatModel(Model $model): array
+    {
+        $data = $model->toArray();
+
+        // Форматируем даты
+        $dateFormat = config('model-contracting.date_format', 'd.m.Y H:i');
+
+        if (isset($data['created_at']) && $data['created_at']) {
+            $data['created_at'] = $model->created_at->format($dateFormat);
+        }
+
+        if (isset($data['updated_at']) && $data['updated_at']) {
+            $data['updated_at'] = $model->updated_at->format($dateFormat);
+        }
+
+        // Добавляем id в начало массива
+        $formattedData = ['id' => $model->id];
+
+        foreach ($data as $key => $value) {
+            if ($key !== 'id') {
+                $formattedData[$key] = $value;
+            }
+        }
+
+        return $formattedData;
     }
 }

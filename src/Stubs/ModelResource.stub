@@ -46,6 +46,7 @@ class {{className}} extends ServiceProvider
             $allowedFields = [
                 'is_selected_dict',
                 'selected_dict_id',
+                'is_editable',
                 'is_sortable',
                 'is_filtered',
             ];
