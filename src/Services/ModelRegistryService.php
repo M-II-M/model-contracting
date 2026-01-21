@@ -20,7 +20,6 @@ class ModelRegistryService
             'resource_class' => $resourceClass,
             'model_class' => $modelClass,
             'fields' => $resourceClass::getFields(),
-            'relationships' => $resourceClass::getRelationships(),
         ];
     }
 
