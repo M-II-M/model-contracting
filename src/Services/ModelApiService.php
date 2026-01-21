@@ -166,6 +166,9 @@ class ModelApiService
         // Построение правил валидации под конкретную модель
         $rules = [];
         foreach ($resource['fields'] as $fieldName => $fieldConfig) {
+            if ($fieldName === 'id') {
+                continue;
+            }
             if (isset($data[$fieldName]) || $isCreate) {
                 $fieldRules = [];
 
