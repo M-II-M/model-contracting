@@ -174,37 +174,51 @@ class ModelApiService
             if ($fieldName === 'id') {
                 continue;
             }
-            if (isset($data[$fieldName]) || $isCreate) {
-                $fieldRules = [];
 
-                if ($isCreate && $fieldConfig['validations']['is_required']) {
-                    $fieldRules[] = 'required';
-                } else {
-                    $fieldRules[] = 'sometimes';
-                }
-
-                // Добавляем проверку уникальности если указано в ресурсе
-                if (isset($fieldConfig['validations']['is_unique']) && $fieldConfig['validations']['is_unique']) {
-                    $fieldRules[] = 'unique:' . $tableName . ',' . $fieldName;
-                }
-
-                $fieldRules[] = match ($fieldConfig['type']) {
-                    'integer' => 'integer',
-                    'float' => 'numeric',
-                    'boolean' => 'boolean',
-                    'date' => 'date',
-                    'json' => 'array',
-                    default => 'string',
-                };
-
-                $rules[$fieldName] = $fieldRules;
+            if ($isCreate) {
+                // При создании: валидируем ВСЕ обязательные поля
+                // и те необязательные поля, которые переданы
+                $shouldValidate = $fieldConfig['validations']['is_required'] || isset($data[$fieldName]);
+            } else {
+                // При обновлении: валидируем ТОЛЬКО те поля, которые переданы в data
+                $shouldValidate = isset($data[$fieldName]);
             }
+
+            if (!$shouldValidate) {
+                continue;
+            }
+
+            $fieldRules = [];
+
+            if ($isCreate && $fieldConfig['validations']['is_required']) {
+                $fieldRules[] = 'required';
+            } else {
+                $fieldRules[] = 'sometimes';
+            }
+
+            // Добавляем проверку уникальности если указано в ресурсе
+            if (isset($fieldConfig['validations']['is_unique']) && $fieldConfig['validations']['is_unique']) {
+                $fieldRules[] = 'unique:' . $tableName . ',' . $fieldName;
+            }
+
+            $fieldRules[] = match ($fieldConfig['type']) {
+                'integer' => 'integer',
+                'float' => 'numeric',
+                'boolean' => 'boolean',
+                'date' => 'date',
+                'json' => 'array',
+                default => 'string',
+            };
+
+            $rules[$fieldName] = $fieldRules;
         }
 
-        $validator = Validator::make($data, $rules);
+        if (!empty($rules)) {
+            $validator = Validator::make($data, $rules);
 
-        if ($validator->fails()) {
-            throw new ValidationException($validator);
+            if ($validator->fails()) {
+                throw new ValidationException($validator);
+            }
         }
     }
 
