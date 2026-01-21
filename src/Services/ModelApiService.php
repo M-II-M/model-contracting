@@ -163,6 +163,11 @@ class ModelApiService
     {
         $resource = $this->registryService->getResourceByAlias($alias);
 
+        // Получаем модель для имени таблицы
+        $modelClass = $this->registryService->getModelClassByAlias($alias);
+        $modelInstance = app($modelClass);
+        $tableName = $modelInstance->getTable();
+
         // Построение правил валидации под конкретную модель
         $rules = [];
         foreach ($resource['fields'] as $fieldName => $fieldConfig) {
@@ -176,6 +181,11 @@ class ModelApiService
                     $fieldRules[] = 'required';
                 } else {
                     $fieldRules[] = 'sometimes';
+                }
+
+                // Добавляем проверку уникальности если указано в ресурсе
+                if (isset($fieldConfig['validations']['is_unique']) && $fieldConfig['validations']['is_unique']) {
+                    $fieldRules[] = 'unique:' . $tableName . ',' . $fieldName;
                 }
 
                 $fieldRules[] = match ($fieldConfig['type']) {
