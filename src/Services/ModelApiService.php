@@ -159,12 +159,11 @@ class ModelApiService
      * @param bool $isCreate используются ли данные для создания записи в модели
      * @return void
      */
-    private function validateData(string $alias, array $data, bool $isCreate = true): void
+    private function validateData(string $alias, array $data, string $modelClass, bool $isCreate = true): void
     {
         $resource = $this->registryService->getResourceByAlias($alias);
 
         // Получаем модель для имени таблицы
-        $modelClass = $this->registryService->getModelClassByAlias($alias);
         $modelInstance = app($modelClass);
         $tableName = $modelInstance->getTable();
 
@@ -174,7 +173,6 @@ class ModelApiService
             if ($fieldName === 'id') {
                 continue;
             }
-
             if ($isCreate) {
                 // При создании: валидируем ВСЕ обязательные поля
                 // и те необязательные поля, которые переданы
