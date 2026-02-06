@@ -3,17 +3,17 @@
 use Illuminate\Support\Facades\Route;
 use MIIM\ModelContracting\Http\Controllers\ModelContractingController;
 
-Route::get('/{alias}/meta', [ModelContractingController::class, 'getMeta'])
+Route::get('/admin/{alias}/meta', [ModelContractingController::class, 'getMeta'])
     ->name('model-contracting.meta');
 
-Route::get('/{alias}', [ModelContractingController::class, 'index'])
+Route::get('/admin/{alias}', [ModelContractingController::class, 'index'])
     ->name('model-contracting.index');
 
-Route::post('/{alias}', [ModelContractingController::class, 'store'])
+Route::post('/admin/{alias}', [ModelContractingController::class, 'store'])
     ->name('model-contracting.create');
 
-Route::patch('/{alias}', [ModelContractingController::class, 'update'])
+Route::patch('/admin/{alias}', [ModelContractingController::class, 'update'])
     ->name('model-contracting.update');
 
-Route::delete('/{alias}', [ModelContractingController::class, 'destroy'])
+Route::delete('/admin/{alias}', [ModelContractingController::class, 'destroy'])
     ->name('model-contracting.delete');
