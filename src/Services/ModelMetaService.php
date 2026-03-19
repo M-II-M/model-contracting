@@ -26,8 +26,8 @@ class ModelMetaService
 
         $fields = [];
         foreach ($resource['fields'] as $fieldName => $fieldConfig) {
-            $fields[] = [
-                'title' => $this->generateFieldTitle($fieldName),
+            $fieldMeta = [
+                'title' => $fieldConfig['title'] ?? $this->generateFieldTitle($fieldName),
                 'field_name' => $fieldName,
                 'type' => $fieldConfig['type'],
                 'default_value' => $fieldConfig['default_value'],
@@ -42,11 +42,17 @@ class ModelMetaService
                 'is_FK' => $fieldConfig['is_FK'],
                 'FK' => $fieldConfig['FK']
             ];
+
+            if (($fieldConfig['type'] ?? null) === 'enum') {
+                $fieldMeta['enum_list'] = $fieldConfig['enum_list'] ?? [];
+            }
+
+            $fields[] = $fieldMeta;
         }
 
         return [
-            'is_deletable' => true,
-            'is_editable' => true,
+            'is_deletable' => $resource['is_deletable'] ?? true,
+            'is_editable' => $resource['is_editable'] ?? true,
             'model_alias' => $alias,
             'model_class' => $resource['model_class'],
             'fields' => $fields,

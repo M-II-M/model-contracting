@@ -21,8 +21,8 @@ class ModelContractingController
 
             // Возвращаем только необходимые поля
             $response = [
-                'is_deletable' => true,
-                'is_editable' => true,
+                'is_deletable' => $metadata['is_deletable'],
+                'is_editable' => $metadata['is_editable'],
                 'fields' => $metadata['fields'],
             ];
 
@@ -37,17 +37,22 @@ class ModelContractingController
     public function index(Request $request, string $alias): JsonResponse
     {
         try {
-            $params = [
-                'pagination' => [
+            $params = [];
+            if ($request->has('pagination')) {
+                $params['pagination'] = [
                     'page' => $request->input('pagination.page', 1),
                     'perPage' => $request->input('pagination.perPage', 10),
-                ],
-                'sort' => [
+                ];
+            }
+            if ($request->has('sort')) {
+                $params['sort'] = [
                     'field' => $request->input('sort.field'),
                     'order' => $request->input('sort.order', 'ASC'),
-                ],
-                'filter' => $request->input('filter', []),
-            ];
+                ];
+            }
+            if ($request->has('filter')) {
+                $params['filter'] = $request->input('filter', []);
+            }
 
             // Если передан параметр id
             $ids = $request->input('id');
@@ -93,12 +98,26 @@ class ModelContractingController
     public function update(Request $request, string $alias): JsonResponse
     {
         try {
-            $data = $request->validate([
-                'ids' => 'required|array',
+            $validated = $request->validate([
+                'ids' => 'sometimes|array',
                 'data' => 'required|array',
             ]);
 
-            $this->apiService->update($alias, $data['ids'], $data['data']);
+            $ids = $validated['ids'] ?? null;
+            if (!$ids) {
+                $idsFromQuery = $request->input('id');
+                if ($idsFromQuery) {
+                    $ids = is_array($idsFromQuery) ? $idsFromQuery : explode(',', $idsFromQuery);
+                }
+            }
+
+            if (!$ids) {
+                return response()->json([
+                    'error' => 'Parameter ids or id is required',
+                ], 400);
+            }
+
+            $this->apiService->update($alias, $ids, $validated['data']);
 
             return response()->json(null, 204);
         } catch (\Illuminate\Validation\ValidationException $e) {

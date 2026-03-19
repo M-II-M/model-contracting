@@ -83,8 +83,8 @@ class ModelApiService
             }
         }
 
-        // Пагинация
-        if (isset($params['pagination']) && is_array($params['pagination'])) {
+        // Пагинация (только для просмотра датасета, без конкретных id)
+        if (!$ids && isset($params['pagination']) && is_array($params['pagination'])) {
             $page = $params['pagination']['page'] ?? 1;
             $perPage = $params['pagination']['perPage'] ?? 10;
 
@@ -119,8 +119,12 @@ class ModelApiService
     public function update(string $alias, array $ids, array $data): void
     {
         $modelClass = $this->registryService->getModelClassByAlias($alias);
+        $resource = $this->registryService->getResourceByAlias($alias);
 
         $this->isModelWithAliasExist($modelClass, $alias);
+        if (($resource['is_editable'] ?? true) === false) {
+            throw new \Exception("Модель с алиасом '{$alias}' недоступна для редактирования");
+        }
 
         // Валидация данных для обновления
         $this->validateData($alias, $data, $modelClass, false);
@@ -146,8 +150,12 @@ class ModelApiService
     public function delete(string $alias, array $ids): void
     {
         $modelClass = $this->registryService->getModelClassByAlias($alias);
+        $resource = $this->registryService->getResourceByAlias($alias);
 
         $this->isModelWithAliasExist($modelClass, $alias);
+        if (($resource['is_deletable'] ?? true) === false) {
+            throw new \Exception("Модель с алиасом '{$alias}' недоступна для удаления");
+        }
 
         $modelClass::destroy($ids);
     }
@@ -172,6 +180,12 @@ class ModelApiService
         foreach ($resource['fields'] as $fieldName => $fieldConfig) {
             if ($fieldName === 'id') {
                 continue;
+            }
+
+            if (!$isCreate && isset($data[$fieldName]) && !($fieldConfig['is_editable'] ?? false)) {
+                throw ValidationException::withMessages([
+                    $fieldName => ["Field '{$fieldName}' is not editable"],
+                ]);
             }
             if ($isCreate) {
                 // При создании: валидируем ВСЕ обязательные поля
@@ -199,16 +213,15 @@ class ModelApiService
                 $fieldRules[] = 'unique:' . $tableName . ',' . $fieldName;
             }
 
-            $fieldRules[] = match ($fieldConfig['type']) {
-                'integer' => 'integer',
-                'float' => 'numeric',
-                'boolean' => 'boolean',
-                'date' => 'date',
-                'json' => 'array',
-                default => 'string',
-            };
+            $typeRules = $this->buildTypeRules($fieldConfig);
+            $fieldRules = array_merge($fieldRules, $typeRules);
 
             $rules[$fieldName] = $fieldRules;
+
+            $arrayItemRule = $this->getArrayItemRule($fieldConfig['type'] ?? 'string');
+            if ($arrayItemRule !== null) {
+                $rules[$fieldName . '.*'] = [$arrayItemRule];
+            }
         }
 
         if (!empty($rules)) {
@@ -273,5 +286,54 @@ class ModelApiService
         if (!$modelClass) {
             throw new \Exception("Модель с алиасом '{$alias}' не найдена");
         }
+    }
+
+    /**
+     * Построение правил валидации.
+     */
+    private function buildTypeRules(array $fieldConfig): array
+    {
+        $type = $fieldConfig['type'] ?? 'string';
+
+        $rules = match ($type) {
+            'integer' => ['integer'],
+            'float' => ['numeric'],
+            'boolean' => ['boolean'],
+            'date' => ['date_format:Y-m-d'],
+            'datetime' => ['date_format:Y-m-d H:i:s'],
+            'string[]' => ['array'],
+            'integer[]' => ['array'],
+            'float[]' => ['array'],
+            'boolean[]' => ['array'],
+            'json' => ['array'],
+            default => ['string'],
+        };
+
+        if ($type === 'enum' && isset($fieldConfig['enum_list']) && is_array($fieldConfig['enum_list'])) {
+            $enumValues = array_values(array_filter(
+                array_map(
+                    static fn ($item) => is_array($item) ? ($item['value'] ?? null) : null,
+                    $fieldConfig['enum_list']
+                ),
+                static fn ($value) => $value !== null
+            ));
+
+            if (!empty($enumValues)) {
+                $rules[] = 'in:' . implode(',', $enumValues);
+            }
+        }
+
+        return $rules;
+    }
+
+    private function getArrayItemRule(string $type): ?string
+    {
+        return match ($type) {
+            'string[]' => 'string',
+            'integer[]' => 'integer',
+            'float[]' => 'numeric',
+            'boolean[]' => 'boolean',
+            default => null,
+        };
     }
 }

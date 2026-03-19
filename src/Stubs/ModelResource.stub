@@ -79,9 +79,16 @@ class {{className}} extends ServiceProvider
                     $fieldRules[] = 'boolean';
                     break;
                 case 'date':
-                    $fieldRules[] = 'date';
+                    $fieldRules[] = 'date_format:Y-m-d';
+                    break;
+                case 'datetime':
+                    $fieldRules[] = 'date_format:Y-m-d H:i:s';
                     break;
                 case 'json':
+                case 'string[]':
+                case 'integer[]':
+                case 'float[]':
+                case 'boolean[]':
                     $fieldRules[] = 'array';
                     break;
                 default:

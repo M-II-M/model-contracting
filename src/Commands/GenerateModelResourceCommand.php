@@ -173,10 +173,11 @@ class GenerateModelResourceCommand extends Command
     {
         $mapping = [
             'string' => ['varchar', 'char', 'text', 'tinytext', 'mediumtext', 'longtext'],
+            'boolean' => ['boolean', 'bool', 'tinyint(1)'],
             'integer' => ['int', 'integer', 'bigint', 'mediumint', 'smallint', 'tinyint'],
             'float' => ['float', 'double', 'decimal', 'numeric', 'real'],
-            'boolean' => ['boolean', 'bool', 'tinyint(1)'],
-            'date' => ['date', 'datetime', 'timestamp', 'timestamptz'],
+            'datetime' => ['datetime', 'timestamp', 'timestamptz'],
+            'date' => ['date'],
             'json' => ['json', 'jsonb'],
         ];
 
