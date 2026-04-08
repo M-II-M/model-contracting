@@ -4,6 +4,14 @@ namespace MIIM\ModelContracting\Services;
 
 use Illuminate\Support\Str;
 
+/**
+ * Мета полей.
+ *
+ * Типы:
+ * - enum — фиксированный список в enum_list (value/text/order).
+ * - select — статические options [{ name, value }, ...]; значение поля — одно value или массив value при multiple: true.
+ * - model_element_select — ссылка на сущность другой модели.
+ */
 class ModelMetaService
 {
     public function __construct(
@@ -45,6 +53,16 @@ class ModelMetaService
 
             if (($fieldConfig['type'] ?? null) === 'enum') {
                 $fieldMeta['enum_list'] = $fieldConfig['enum_list'] ?? [];
+            }
+
+            if (($fieldConfig['type'] ?? null) === 'select') {
+                $fieldMeta['options'] = $fieldConfig['options'] ?? [];
+                $fieldMeta['multiple'] = $fieldConfig['multiple'] ?? false;
+            }
+
+            if (($fieldConfig['type'] ?? null) === 'model_element_select') {
+                $fieldMeta['search_attributes'] = $fieldConfig['search_attributes'] ?? [];
+                $fieldMeta['multiple'] = $fieldConfig['multiple'] ?? false;
             }
 
             $fields[] = $fieldMeta;

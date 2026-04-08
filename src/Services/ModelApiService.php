@@ -4,6 +4,7 @@ namespace MIIM\ModelContracting\Services;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class ModelApiService
@@ -218,9 +219,9 @@ class ModelApiService
 
             $rules[$fieldName] = $fieldRules;
 
-            $arrayItemRule = $this->getArrayItemRule($fieldConfig['type'] ?? 'string');
-            if ($arrayItemRule !== null) {
-                $rules[$fieldName . '.*'] = [$arrayItemRule];
+            $arrayItemRules = $this->getArrayItemRules($fieldConfig);
+            if ($arrayItemRules !== null) {
+                $rules[$fieldName . '.*'] = $arrayItemRules;
             }
         }
 
@@ -306,6 +307,8 @@ class ModelApiService
             'float[]' => ['array'],
             'boolean[]' => ['array'],
             'json' => ['array'],
+            'select' => $this->buildSelectRules($fieldConfig),
+            'model_element_select' => $this->buildModelElementSelectRules($fieldConfig),
             default => ['string'],
         };
 
@@ -326,14 +329,92 @@ class ModelApiService
         return $rules;
     }
 
-    private function getArrayItemRule(string $type): ?string
+    /**
+     * Статический список (select): одно значение или массив при multiple.
+     *
+     * @return array<int, string|object>
+     */
+    private function buildSelectRules(array $fieldConfig): array
     {
-        return match ($type) {
+        $multiple = $fieldConfig['multiple'] ?? false;
+        $values = $this->extractSelectOptionValues($fieldConfig);
+
+        if ($multiple) {
+            return ['array'];
+        }
+
+        if ($values !== []) {
+            return [Rule::in($values)];
+        }
+
+        return ['string'];
+    }
+
+    /**
+     * Выбор строки другой модели по API.
+     *
+     * @return array<int, string>
+     */
+    private function buildModelElementSelectRules(array $fieldConfig): array
+    {
+        $multiple = $fieldConfig['multiple'] ?? false;
+
+        if ($multiple) {
+            return ['array'];
+        }
+
+        return ['string'];
+    }
+
+    /**
+     * Значения option.value из конфигурации поля type=select.
+     *
+     * @return list<string|int|float>
+     */
+    private function extractSelectOptionValues(array $fieldConfig): array
+    {
+        $options = $fieldConfig['options'] ?? [];
+        if (!is_array($options)) {
+            return [];
+        }
+
+        $values = [];
+        foreach ($options as $option) {
+            if (is_array($option) && array_key_exists('value', $option)) {
+                $values[] = $option['value'];
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * Правила для элементов массива.
+     *
+     * @return array<int, string|object>|null
+     */
+    private function getArrayItemRules(array $fieldConfig): ?array
+    {
+        $type = $fieldConfig['type'] ?? 'string';
+
+        if ($type === 'select' && ($fieldConfig['multiple'] ?? false)) {
+            $values = $this->extractSelectOptionValues($fieldConfig);
+
+            return $values !== [] ? [Rule::in($values)] : ['string'];
+        }
+
+        if ($type === 'model_element_select' && ($fieldConfig['multiple'] ?? false)) {
+            return ['string'];
+        }
+
+        $simple = match ($type) {
             'string[]' => 'string',
             'integer[]' => 'integer',
             'float[]' => 'numeric',
             'boolean[]' => 'boolean',
             default => null,
         };
+
+        return $simple !== null ? [$simple] : null;
     }
 }

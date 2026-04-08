@@ -91,6 +91,10 @@ class {{className}} extends ServiceProvider
                 case 'boolean[]':
                     $fieldRules[] = 'array';
                     break;
+                case 'select':
+                case 'model_element_select':
+                    $fieldRules[] = ($fieldConfig['multiple'] ?? false) ? 'array' : 'string';
+                    break;
                 default:
                     $fieldRules[] = 'string';
             }
