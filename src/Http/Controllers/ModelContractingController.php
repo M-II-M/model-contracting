@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use MIIM\ModelContracting\Services\ModelApiService;
 use MIIM\ModelContracting\Services\ModelMetaService;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class ModelContractingController
 {
@@ -147,6 +148,10 @@ class ModelContractingController
             $this->apiService->delete($alias, $ids);
 
             return response()->json(null, 204);
+        } catch (NotFoundHttpException $e) {
+            return response()->json([
+                'error' => $e->getMessage() ?: 'Not found',
+            ], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'error' => $e->getMessage()

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class ModelApiService
 {
@@ -130,11 +131,13 @@ class ModelApiService
         // Валидация данных для обновления
         $this->validateData($alias, $data, $modelClass, false);
 
+        $editableData = $this->filterEditableData($resource, $data);
+
         // Обновление записей
         $models = $modelClass::whereIn('id', $ids)->get();
 
         foreach ($models as $model) {
-            foreach ($data as $field => $value) {
+            foreach ($editableData as $field => $value) {
                 $model->$field = $value;
             }
             $model->save();
@@ -158,7 +161,33 @@ class ModelApiService
             throw new \Exception("Модель с алиасом '{$alias}' недоступна для удаления");
         }
 
-        $modelClass::destroy($ids);
+        $uniqueIds = array_values(array_unique($ids));
+        $foundCount = $modelClass::whereIn('id', $uniqueIds)->count();
+        if ($foundCount !== count($uniqueIds)) {
+            throw new NotFoundHttpException('Record not found');
+        }
+
+        $modelClass::destroy($uniqueIds);
+    }
+
+    /**
+     * Только поля с is_editable: true из контрактного ресурса.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function filterEditableData(array $resource, array $data): array
+    {
+        $fields = $resource['fields'] ?? [];
+        $out = [];
+        foreach ($data as $field => $value) {
+            $cfg = $fields[$field] ?? null;
+            if (is_array($cfg) && ($cfg['is_editable'] ?? false)) {
+                $out[$field] = $value;
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -175,6 +204,15 @@ class ModelApiService
         // Получаем модель для имени таблицы
         $modelInstance = app($modelClass);
         $tableName = $modelInstance->getTable();
+
+        if (!$isCreate && array_key_exists('id', $data)) {
+            $idConfig = $resource['fields']['id'] ?? null;
+            if (!is_array($idConfig) || !($idConfig['is_editable'] ?? false)) {
+                throw ValidationException::withMessages([
+                    'id' => ["Field 'id' is not editable"],
+                ]);
+            }
+        }
 
         // Построение правил валидации под конкретную модель
         $rules = [];
