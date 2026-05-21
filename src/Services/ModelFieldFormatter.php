@@ -8,6 +8,74 @@ use Carbon\Exceptions\InvalidFormatException;
 class ModelFieldFormatter
 {
     /**
+     * @param  array<string, array<string, mixed>>  $fields
+     * @return array{titles: array<string, string|null>, selectMaps: array<string, array<string, string>>, enumMaps: array<string, array<string, string>>}
+     */
+    public function prepareFieldsContext(array $fields): array
+    {
+        $titles = [];
+        $selectMaps = [];
+        $enumMaps = [];
+
+        foreach ($fields as $fieldName => $fieldConfig) {
+            $titles[$fieldName] = $this->fieldTitle($fieldConfig);
+
+            $type = $fieldConfig['type'] ?? 'string';
+
+            if ($type === 'select') {
+                $map = [];
+                foreach ($fieldConfig['options'] ?? [] as $option) {
+                    if (! is_array($option) || ! array_key_exists('value', $option)) {
+                        continue;
+                    }
+                    $name = $option['name'] ?? $option['label'] ?? null;
+                    $map[(string) $option['value']] = is_string($name) && $name !== ''
+                        ? $name
+                        : (string) $option['value'];
+                }
+                if ($map !== []) {
+                    $selectMaps[$fieldName] = $map;
+                }
+            }
+
+            if ($type === 'enum') {
+                $map = [];
+                foreach ($fieldConfig['enum_list'] ?? [] as $item) {
+                    if (! is_array($item) || ! array_key_exists('value', $item)) {
+                        continue;
+                    }
+                    $text = $item['text'] ?? $item['name'] ?? $item['label'] ?? null;
+                    $map[(string) $item['value']] = is_string($text) && $text !== ''
+                        ? $text
+                        : (string) $item['value'];
+                }
+                if ($map !== []) {
+                    $enumMaps[$fieldName] = $map;
+                }
+            }
+        }
+
+        return [
+            'titles' => $titles,
+            'selectMaps' => $selectMaps,
+            'enumMaps' => $enumMaps,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldConfig
+     * @param  array{titles: array<string, string|null>, selectMaps: array<string, array<string, string>>, enumMaps: array<string, array<string, string>>}|null  $context
+     * @return array{value: mixed, display_text: string|null}
+     */
+    public function formatField(mixed $rawValue, array $fieldConfig, ?string $fieldName = null, ?array $context = null): array
+    {
+        return [
+            'value' => $this->formatValue($rawValue, $fieldConfig),
+            'display_text' => $this->formatDisplayText($rawValue, $fieldConfig, $fieldName, $context),
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $fieldConfig
      */
     public function formatValue(mixed $rawValue, array $fieldConfig): mixed
@@ -32,23 +100,29 @@ class ModelFieldFormatter
 
     /**
      * @param  array<string, mixed>  $fieldConfig
+     * @param  array{titles: array<string, string|null>, selectMaps: array<string, array<string, string>>, enumMaps: array<string, array<string, string>>}|null  $context
      */
-    public function formatDisplayText(mixed $rawValue, array $fieldConfig): ?string
-    {
+    public function formatDisplayText(
+        mixed $rawValue,
+        array $fieldConfig,
+        ?string $fieldName = null,
+        ?array $context = null,
+    ): ?string {
         $type = $fieldConfig['type'] ?? 'string';
+        $title = $fieldName !== null && $context !== null
+            ? ($context['titles'][$fieldName] ?? $this->fieldTitle($fieldConfig))
+            : $this->fieldTitle($fieldConfig);
 
         if ($rawValue === null) {
-            return $this->fieldTitle($fieldConfig);
+            return $title;
         }
 
         return match ($type) {
-            'json' => $this->formatJsonDisplayText($rawValue, $fieldConfig),
-            'select' => $this->formatSelectDisplayText($rawValue, $fieldConfig)
-                ?? $this->fieldTitle($fieldConfig),
-            'enum' => $this->formatEnumDisplayText($rawValue, $fieldConfig)
-                ?? $this->fieldTitle($fieldConfig),
-            'boolean' => $this->fieldTitle($fieldConfig),
-            default => $this->fieldTitle($fieldConfig),
+            'json' => $this->formatJsonDisplayText($rawValue, $fieldConfig) ?? $title,
+            'select' => $this->resolveSelectDisplayText($rawValue, $fieldConfig, $fieldName, $context) ?? $title,
+            'enum' => $this->resolveEnumDisplayText($rawValue, $fieldConfig, $fieldName, $context) ?? $title,
+            'boolean' => $title,
+            default => $title,
         };
     }
 
@@ -199,6 +273,31 @@ class ModelFieldFormatter
 
     /**
      * @param  array<string, mixed>  $fieldConfig
+     * @param  array{titles: array<string, string|null>, selectMaps: array<string, array<string, string>>, enumMaps: array<string, array<string, string>>}|null  $context
+     */
+    private function resolveSelectDisplayText(
+        mixed $rawValue,
+        array $fieldConfig,
+        ?string $fieldName,
+        ?array $context,
+    ): ?string {
+        $needle = is_scalar($rawValue) ? (string) $rawValue : null;
+        if ($needle === null) {
+            return null;
+        }
+
+        if ($fieldName !== null && $context !== null) {
+            $mapped = $context['selectMaps'][$fieldName][$needle] ?? null;
+            if ($mapped !== null) {
+                return $mapped;
+            }
+        }
+
+        return $this->formatSelectDisplayText($rawValue, $fieldConfig);
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldConfig
      */
     private function formatSelectDisplayText(mixed $rawValue, array $fieldConfig): ?string
     {
@@ -225,6 +324,31 @@ class ModelFieldFormatter
         }
 
         return is_scalar($rawValue) ? (string) $rawValue : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $fieldConfig
+     * @param  array{titles: array<string, string|null>, selectMaps: array<string, array<string, string>>, enumMaps: array<string, array<string, string>>}|null  $context
+     */
+    private function resolveEnumDisplayText(
+        mixed $rawValue,
+        array $fieldConfig,
+        ?string $fieldName,
+        ?array $context,
+    ): ?string {
+        $needle = is_scalar($rawValue) ? (string) $rawValue : null;
+        if ($needle === null) {
+            return null;
+        }
+
+        if ($fieldName !== null && $context !== null) {
+            $mapped = $context['enumMaps'][$fieldName][$needle] ?? null;
+            if ($mapped !== null) {
+                return $mapped;
+            }
+        }
+
+        return $this->formatEnumDisplayText($rawValue, $fieldConfig);
     }
 
     /**

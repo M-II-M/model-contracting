@@ -86,11 +86,39 @@ class ModelApiService
             }
         }
 
-        // Пагинация (только для просмотра датасета, без конкретных id)
-        if (!$ids && isset($params['pagination']) && is_array($params['pagination'])) {
-            $page = $params['pagination']['page'] ?? 1;
-            $perPage = $params['pagination']['perPage'] ?? 10;
+        // всегда через пагинацию
+        if (! $ids) {
+            return $this->readPaginated($query, $alias, $params['pagination'] ?? []);
+        }
 
+        $results = $query->get();
+
+        return [
+            'data' => $this->formatMultipleResponse($results, $alias),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $paginationParams
+     * @return array{pagination: array<string, int|null>, data: list<array<string, array{value: mixed, display_text: string|null}>>}
+     */
+    private function readPaginated($query, string $alias, array $paginationParams): array
+    {
+        $defaultPerPage = max(1, (int) config('model-contracting.default_per_page', 10));
+        $maxPerPage = max($defaultPerPage, (int) config('model-contracting.max_per_page', 100));
+
+        $page = max(1, (int) ($paginationParams['page'] ?? 1));
+        $perPage = (int) ($paginationParams['perPage'] ?? $defaultPerPage);
+        if ($perPage < 1) {
+            $perPage = $defaultPerPage;
+        }
+        $perPage = min($perPage, $maxPerPage);
+
+        $withTotal = array_key_exists('withTotal', $paginationParams)
+            ? filter_var($paginationParams['withTotal'], FILTER_VALIDATE_BOOLEAN)
+            : (bool) config('model-contracting.pagination_with_total', true);
+
+        if ($withTotal) {
             $paginator = $query->paginate($perPage, ['*'], 'page', $page);
 
             return [
@@ -104,10 +132,16 @@ class ModelApiService
             ];
         }
 
-        $results = $query->get();
+        $items = $query->forPage($page, $perPage)->get();
 
         return [
-            'data' => $this->formatMultipleResponse($results, $alias)
+            'pagination' => [
+                'page' => $page,
+                'perPage' => $perPage,
+                'totalRecords' => null,
+                'totalPages' => null,
+            ],
+            'data' => $this->formatMultipleResponse($items, $alias),
         ];
     }
 
@@ -292,10 +326,15 @@ class ModelApiService
      */
     private function formatMultipleResponse(iterable $models, string $alias): array
     {
+        $resource = $this->registryService->getResourceByAlias($alias);
+        $fields = $resource['fields'] ?? [];
+        $fieldNames = $this->resolveFieldNames($fields, null);
+        $context = $this->fieldFormatter->prepareFieldsContext($fields);
+
         $result = [];
 
         foreach ($models as $model) {
-            $result[] = $this->formatModel($model, $alias);
+            $result[] = $this->formatModelWithContext($model, $fieldNames, $fields, $context);
         }
 
         return $result;
@@ -310,17 +349,47 @@ class ModelApiService
     {
         $resource = $this->registryService->getResourceByAlias($alias);
         $fields = $resource['fields'] ?? [];
-        $data = $model->toArray();
 
+        return $this->formatModelWithContext(
+            $model,
+            $this->resolveFieldNames($fields, $model->getAttributes()),
+            $fields,
+            $this->fieldFormatter->prepareFieldsContext($fields),
+        );
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $fields
+     * @param  array<string, mixed>|null  $attributes
+     * @return list<string>
+     */
+    private function resolveFieldNames(array $fields, ?array $attributes): array
+    {
         $fieldNames = array_keys($fields);
-        if ($fieldNames === []) {
-            $fieldNames = array_keys($data);
+        if ($fieldNames === [] && is_array($attributes)) {
+            $fieldNames = array_keys($attributes);
         }
 
         if (! in_array('id', $fieldNames, true)) {
             array_unshift($fieldNames, 'id');
         }
 
+        return $fieldNames;
+    }
+
+    /**
+     * @param  list<string>  $fieldNames
+     * @param  array<string, array<string, mixed>>  $fields
+     * @param  array{titles: array<string, string|null>, selectMaps: array<string, array<string, string>>, enumMaps: array<string, array<string, string>>}  $context
+     * @return array<string, array{value: mixed, display_text: string|null}>
+     */
+    private function formatModelWithContext(
+        Model $model,
+        array $fieldNames,
+        array $fields,
+        array $context,
+    ): array {
+        $attributes = $model->getAttributes();
         $formattedData = [];
 
         foreach ($fieldNames as $fieldName) {
@@ -330,14 +399,14 @@ class ModelApiService
                 'type' => 'string',
             ];
 
-            $rawValue = $fieldName === 'id'
-                ? $model->getAttribute('id')
-                : ($data[$fieldName] ?? null);
+            $rawValue = $attributes[$fieldName] ?? null;
 
-            $formattedData[$fieldName] = [
-                'value' => $this->fieldFormatter->formatValue($rawValue, $fieldConfig),
-                'display_text' => $this->fieldFormatter->formatDisplayText($rawValue, $fieldConfig),
-            ];
+            $formattedData[$fieldName] = $this->fieldFormatter->formatField(
+                $rawValue,
+                $fieldConfig,
+                $fieldName,
+                $context,
+            );
         }
 
         return $formattedData;

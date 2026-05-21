@@ -21,6 +21,8 @@ class ModelContractingServiceProvider extends ServiceProvider
 
     public function boot()
     {
+        $this->mergeConfigFrom(__DIR__.'/../config/model-contracting.php', 'model-contracting');
+
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
 
         if ($this->app->runningInConsole()) {
