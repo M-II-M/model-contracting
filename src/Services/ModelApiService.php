@@ -11,7 +11,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class ModelApiService
 {
     public function __construct(
-        private ModelRegistryService $registryService
+        private ModelRegistryService $registryService,
+        private ModelFieldFormatter $fieldFormatter = new ModelFieldFormatter(),
     ) {}
 
     /**
@@ -37,7 +38,7 @@ class ModelApiService
 
         $model->save();
 
-        return $this->formatResponse($model);
+        return $this->formatResponse($model, $alias);
     }
 
     /**
@@ -99,14 +100,14 @@ class ModelApiService
                     'totalRecords' => $paginator->total(),
                     'totalPages' => $paginator->lastPage(),
                 ],
-                'data' => $this->formatMultipleResponse($paginator->items()),
+                'data' => $this->formatMultipleResponse($paginator->items(), $alias),
             ];
         }
 
         $results = $query->get();
 
         return [
-            'data' => $this->formatMultipleResponse($results)
+            'data' => $this->formatMultipleResponse($results, $alias)
         ];
     }
 
@@ -277,44 +278,66 @@ class ModelApiService
      * @param Model $model модель
      * @return array[]
      */
-    private function formatResponse(Model $model): array
+    private function formatResponse(Model $model, string $alias): array
     {
         return [
-            'data' => $this->formatModel($model)
+            'data' => $this->formatModel($model, $alias),
         ];
     }
 
     /**
      * Форматирование ответа для запросов с несколькики записями модели
-     * @param $models
-     * @return array
+     * @param  iterable<int, Model>  $models
+     * @return list<array<string, array{value: mixed, display_text: string|null}>>
      */
-    private function formatMultipleResponse($models): array
+    private function formatMultipleResponse(iterable $models, string $alias): array
     {
         $result = [];
 
         foreach ($models as $model) {
-            $result[] = $this->formatModel($model);
+            $result[] = $this->formatModel($model, $alias);
         }
 
         return $result;
     }
 
     /**
-     * Форматирование данных модели в массив
-     * @param Model $model модель
-     * @return array
+     * Форматирование данных модели в массив { value, display_text } по полям контрактинга.
+     *
+     * @return array<string, array{value: mixed, display_text: string|null}>
      */
-    private function formatModel(Model $model): array
+    private function formatModel(Model $model, string $alias): array
     {
+        $resource = $this->registryService->getResourceByAlias($alias);
+        $fields = $resource['fields'] ?? [];
         $data = $model->toArray();
 
-        $formattedData = ['id' => $model->id];
+        $fieldNames = array_keys($fields);
+        if ($fieldNames === []) {
+            $fieldNames = array_keys($data);
+        }
 
-        foreach ($data as $key => $value) {
-            if ($key !== 'id') {
-                $formattedData[$key] = $value;
-            }
+        if (! in_array('id', $fieldNames, true)) {
+            array_unshift($fieldNames, 'id');
+        }
+
+        $formattedData = [];
+
+        foreach ($fieldNames as $fieldName) {
+            $fieldConfig = $fields[$fieldName] ?? [
+                'name' => $fieldName,
+                'title' => $fieldName,
+                'type' => 'string',
+            ];
+
+            $rawValue = $fieldName === 'id'
+                ? $model->getAttribute('id')
+                : ($data[$fieldName] ?? null);
+
+            $formattedData[$fieldName] = [
+                'value' => $this->fieldFormatter->formatValue($rawValue, $fieldConfig),
+                'display_text' => $this->fieldFormatter->formatDisplayText($rawValue, $fieldConfig),
+            ];
         }
 
         return $formattedData;

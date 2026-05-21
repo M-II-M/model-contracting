@@ -7,6 +7,7 @@ use MIIM\ModelContracting\Commands\GenerateModelResourceCommand;
 use MIIM\ModelContracting\Services\ModelRegistryService;
 use MIIM\ModelContracting\Services\ModelMetaService;
 use MIIM\ModelContracting\Services\ModelApiService;
+use MIIM\ModelContracting\Services\ModelFieldFormatter;
 
 class ModelContractingServiceProvider extends ServiceProvider
 {
@@ -14,6 +15,7 @@ class ModelContractingServiceProvider extends ServiceProvider
     {
         $this->app->singleton(Services\ModelRegistryService::class);
         $this->app->singleton(Services\ModelMetaService::class);
+        $this->app->singleton(ModelFieldFormatter::class);
         $this->app->singleton(Services\ModelApiService::class);
     }
 
