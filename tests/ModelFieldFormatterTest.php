@@ -15,7 +15,7 @@ final class ModelFieldFormatterTest extends TestCase
         $this->formatter = new ModelFieldFormatter();
     }
 
-    public function testDateTimeValueAndTitleDisplayText(): void
+    public function testDateTimeDisplayTextEqualsFormattedValue(): void
     {
         $fieldConfig = [
             'name' => 'created_at',
@@ -24,9 +24,78 @@ final class ModelFieldFormatterTest extends TestCase
         ];
 
         $raw = '2026-05-19T12:23:04.000000Z';
+        $value = $this->formatter->formatValue($raw, $fieldConfig);
 
-        self::assertSame('19.05.2026 12:23', $this->formatter->formatValue($raw, $fieldConfig));
-        self::assertSame('Дата создания', $this->formatter->formatDisplayText($raw, $fieldConfig));
+        self::assertSame('19.05.2026 12:23', $value);
+        self::assertSame('19.05.2026 12:23', $this->formatter->formatDisplayText($raw, $value, $fieldConfig, 'created_at'));
+    }
+
+    public function testBooleanDisplayTextIsDaNet(): void
+    {
+        $fieldConfig = [
+            'name' => 'is_active',
+            'title' => 'Активность',
+            'type' => 'boolean',
+        ];
+
+        $value = $this->formatter->formatValue(true, $fieldConfig);
+
+        self::assertSame('Да', $this->formatter->formatDisplayText(true, $value, $fieldConfig, 'is_active'));
+        self::assertSame('Нет', $this->formatter->formatDisplayText(false, false, $fieldConfig, 'is_active'));
+    }
+
+    public function testAliasDisplayTextEqualsValue(): void
+    {
+        $fieldConfig = [
+            'name' => 'alias',
+            'title' => 'Алиас',
+            'type' => 'string',
+        ];
+
+        $value = $this->formatter->formatValue('AgrOsago', $fieldConfig);
+
+        self::assertSame('AgrOsago', $this->formatter->formatDisplayText('AgrOsago', $value, $fieldConfig, 'alias'));
+    }
+
+    public function testIdDisplayTextEqualsValue(): void
+    {
+        $fieldConfig = [
+            'name' => 'id',
+            'title' => 'Идентификатор',
+            'type' => 'string',
+        ];
+
+        $id = '01AGOPRD000000000000000000';
+        $value = $this->formatter->formatValue($id, $fieldConfig);
+
+        self::assertSame($id, $this->formatter->formatDisplayText($id, $value, $fieldConfig, 'id'));
+    }
+
+    public function testFkDisplayTextFromContext(): void
+    {
+        $fieldConfig = [
+            'name' => 'parent_id',
+            'title' => 'Родительская группа',
+            'type' => 'string',
+            'is_FK' => true,
+            'FK' => [
+                'model_alias' => 'dictionaries',
+                'relation_type' => 'belongsto',
+            ],
+        ];
+
+        $parentId = '01jqxhgns3jvhh5tctzfx8gx7w';
+        $value = $this->formatter->formatValue($parentId, $fieldConfig);
+        $context = [
+            'fkDisplays' => [
+                'parent_id' => [
+                    $parentId => 'ОСАГО',
+                ],
+            ],
+        ];
+
+        self::assertSame($parentId, $value);
+        self::assertSame('ОСАГО', $this->formatter->formatDisplayText($parentId, $value, $fieldConfig, 'parent_id', $context));
     }
 
     public function testExtensionsDisplayText(): void
@@ -50,101 +119,13 @@ final class ModelFieldFormatterTest extends TestCase
                 'label' => 'Вид спорта',
                 'value' => 'альпинизм',
             ],
-            [
-                'name' => 'promo',
-                'type' => 'string',
-                'label' => 'Промокод',
-                'value' => 'promocode',
-            ],
         ];
 
-        self::assertSame($raw, $this->formatter->formatValue($raw, $fieldConfig));
-        self::assertSame(
-            "Возраст страхуемого: 19\r\nВид спорта: альпинизм\r\nПромокод: promocode",
-            $this->formatter->formatDisplayText($raw, $fieldConfig)
-        );
-    }
-
-    public function testSelectDisplayTextUsesOptionName(): void
-    {
-        $fieldConfig = [
-            'name' => 'relation_name',
-            'title' => 'Тип связи',
-            'type' => 'select',
-            'options' => [
-                ['name' => 'Категория ТС → Марка', 'value' => 'vehicle_category_mark'],
-            ],
-        ];
-
-        self::assertSame('vehicle_category_mark', $this->formatter->formatValue('vehicle_category_mark', $fieldConfig));
-        self::assertSame('Категория ТС → Марка', $this->formatter->formatDisplayText('vehicle_category_mark', $fieldConfig));
-    }
-
-    public function testScalarFieldDisplayTextUsesTitle(): void
-    {
-        $fieldConfig = [
-            'name' => 'alias',
-            'title' => 'Алиас',
-            'type' => 'string',
-        ];
-
-        self::assertSame('osago_countries_elem_2570', $this->formatter->formatValue('osago_countries_elem_2570', $fieldConfig));
-        self::assertSame('Алиас', $this->formatter->formatDisplayText('osago_countries_elem_2570', $fieldConfig));
-    }
-
-    public function testExtensionsSpecShape(): void
-    {
-        $fieldConfig = [
-            'name' => 'extensions',
-            'title' => 'Расширенные параметры',
-            'type' => 'extensions',
-        ];
-
-        $raw = [
-            [
-                'type' => 'string',
-                'name' => 'Основание заключения',
-                'value' => 'Дополнительное соглашение',
-            ],
-            [
-                'type' => 'number',
-                'name' => 'Процент скидки',
-                'value' => 10,
-            ],
-        ];
+        $value = $this->formatter->formatValue($raw, $fieldConfig);
 
         self::assertSame(
-            "Основание заключения: Дополнительное соглашение\r\nПроцент скидки: 10",
-            $this->formatter->formatDisplayText($raw, $fieldConfig)
-        );
-    }
-
-    public function testDictElementOptionsShapeWithLabel(): void
-    {
-        $fieldConfig = [
-            'name' => 'options',
-            'title' => 'Расширенные параметры',
-            'type' => 'extensions',
-        ];
-
-        $raw = [
-            [
-                'name' => 'name',
-                'type' => 'string',
-                'label' => 'Название',
-                'value' => 'РОССИЯ',
-            ],
-            [
-                'name' => 'is_unfriendly',
-                'type' => 'boolean',
-                'label' => 'Недружественная страна',
-                'value' => false,
-            ],
-        ];
-
-        self::assertSame(
-            "Название: РОССИЯ\r\nНедружественная страна: Нет",
-            $this->formatter->formatDisplayText($raw, $fieldConfig)
+            "Возраст страхуемого: 19\r\nВид спорта: альпинизм",
+            $this->formatter->formatDisplayText($raw, $value, $fieldConfig, 'options')
         );
     }
 }

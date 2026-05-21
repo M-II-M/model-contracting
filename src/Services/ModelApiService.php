@@ -12,7 +12,8 @@ class ModelApiService
 {
     public function __construct(
         private ModelRegistryService $registryService,
-        private ModelFieldFormatter $fieldFormatter = new ModelFieldFormatter(),
+        private ModelFieldFormatter $fieldFormatter,
+        private FkDisplayResolver $fkDisplayResolver,
     ) {}
 
     /**
@@ -329,11 +330,13 @@ class ModelApiService
         $resource = $this->registryService->getResourceByAlias($alias);
         $fields = $resource['fields'] ?? [];
         $fieldNames = $this->resolveFieldNames($fields, null);
+        $modelsList = $models instanceof \Traversable ? iterator_to_array($models) : (array) $models;
         $context = $this->fieldFormatter->prepareFieldsContext($fields);
+        $context['fkDisplays'] = $this->fkDisplayResolver->resolveBatch($modelsList, $fields);
 
         $result = [];
 
-        foreach ($models as $model) {
+        foreach ($modelsList as $model) {
             $result[] = $this->formatModelWithContext($model, $fieldNames, $fields, $context);
         }
 
@@ -350,11 +353,14 @@ class ModelApiService
         $resource = $this->registryService->getResourceByAlias($alias);
         $fields = $resource['fields'] ?? [];
 
+        $context = $this->fieldFormatter->prepareFieldsContext($fields);
+        $context['fkDisplays'] = $this->fkDisplayResolver->resolveBatch([$model], $fields);
+
         return $this->formatModelWithContext(
             $model,
             $this->resolveFieldNames($fields, $model->getAttributes()),
             $fields,
-            $this->fieldFormatter->prepareFieldsContext($fields),
+            $context,
         );
     }
 

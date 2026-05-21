@@ -69,9 +69,11 @@ class ModelFieldFormatter
      */
     public function formatField(mixed $rawValue, array $fieldConfig, ?string $fieldName = null, ?array $context = null): array
     {
+        $value = $this->formatValue($rawValue, $fieldConfig);
+
         return [
-            'value' => $this->formatValue($rawValue, $fieldConfig),
-            'display_text' => $this->formatDisplayText($rawValue, $fieldConfig, $fieldName, $context),
+            'value' => $value,
+            'display_text' => $this->formatDisplayText($rawValue, $value, $fieldConfig, $fieldName, $context),
         ];
     }
 
@@ -99,31 +101,75 @@ class ModelFieldFormatter
     }
 
     /**
+     * display_text — человекочитаемое значение для ячейки таблицы (заголовки колонок — в meta.title).
+     *
      * @param  array<string, mixed>  $fieldConfig
-     * @param  array{titles: array<string, string|null>, selectMaps: array<string, array<string, string>>, enumMaps: array<string, array<string, string>>}|null  $context
+     * @param  array{titles?: array<string, string|null>, selectMaps?: array<string, array<string, string>>, enumMaps?: array<string, array<string, string>>, fkDisplays?: array<string, array<string, string>>}|null  $context
      */
     public function formatDisplayText(
         mixed $rawValue,
+        mixed $formattedValue,
         array $fieldConfig,
         ?string $fieldName = null,
         ?array $context = null,
     ): ?string {
-        $type = $fieldConfig['type'] ?? 'string';
-        $title = $fieldName !== null && $context !== null
-            ? ($context['titles'][$fieldName] ?? $this->fieldTitle($fieldConfig))
-            : $this->fieldTitle($fieldConfig);
-
         if ($rawValue === null) {
-            return $title;
+            return null;
         }
 
+        if (($fieldConfig['is_FK'] ?? false) && $fieldName !== null && $context !== null) {
+            $fkText = $this->resolveFkDisplayText($rawValue, $fieldName, $context);
+            if ($fkText !== null) {
+                return $fkText;
+            }
+        }
+
+        $type = $fieldConfig['type'] ?? 'string';
+
         return match ($type) {
-            'extensions', 'json' => $this->formatExtensionsDisplayText($rawValue, $fieldConfig) ?? $title,
-            'select' => $this->resolveSelectDisplayText($rawValue, $fieldConfig, $fieldName, $context) ?? $title,
-            'enum' => $this->resolveEnumDisplayText($rawValue, $fieldConfig, $fieldName, $context) ?? $title,
-            'boolean' => $title,
-            default => $title,
+            'extensions', 'json' => $this->formatExtensionsDisplayText($rawValue, $fieldConfig),
+            'select' => $this->resolveSelectDisplayText($rawValue, $fieldConfig, $fieldName, $context)
+                ?? $this->scalarDisplayText($formattedValue),
+            'enum' => $this->resolveEnumDisplayText($rawValue, $fieldConfig, $fieldName, $context)
+                ?? $this->scalarDisplayText($formattedValue),
+            'boolean' => $this->formatBooleanDisplayText($rawValue),
+            'date', 'datetime' => $this->scalarDisplayText($formattedValue),
+            default => $fieldName === 'id'
+                ? $this->scalarDisplayText($formattedValue)
+                : $this->scalarDisplayText($formattedValue),
         };
+    }
+
+    /**
+     * @param  array{fkDisplays?: array<string, array<string, string>>}  $context
+     */
+    private function resolveFkDisplayText(mixed $rawValue, string $fieldName, array $context): ?string
+    {
+        if (! is_scalar($rawValue)) {
+            return null;
+        }
+
+        $id = (string) $rawValue;
+        $map = $context['fkDisplays'][$fieldName] ?? null;
+
+        return is_array($map) ? ($map[$id] ?? null) : null;
+    }
+
+    private function scalarDisplayText(mixed $formattedValue): ?string
+    {
+        if ($formattedValue === null) {
+            return null;
+        }
+
+        if (is_bool($formattedValue)) {
+            return $this->formatBooleanDisplayText($formattedValue);
+        }
+
+        if (is_scalar($formattedValue)) {
+            return (string) $formattedValue;
+        }
+
+        return null;
     }
 
     /**
@@ -178,14 +224,14 @@ class ModelFieldFormatter
         $value = $this->normalizeExtensionsValue($rawValue);
 
         if (! is_array($value)) {
-            return $this->fieldTitle($fieldConfig);
+            return null;
         }
 
         if ($this->isExtensionsList($value)) {
             return $this->formatExtensionsListDisplayText($value);
         }
 
-        return $this->fieldTitle($fieldConfig);
+        return null;
     }
 
     /**
