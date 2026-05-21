@@ -29,12 +29,12 @@ final class ModelFieldFormatterTest extends TestCase
         self::assertSame('Дата создания', $this->formatter->formatDisplayText($raw, $fieldConfig));
     }
 
-    public function testJsonOptionsDisplayText(): void
+    public function testExtensionsDisplayText(): void
     {
         $fieldConfig = [
             'name' => 'options',
-            'title' => 'Опции',
-            'type' => 'json',
+            'title' => 'Расширенные параметры',
+            'type' => 'extensions',
         ];
 
         $raw = [
@@ -92,12 +92,39 @@ final class ModelFieldFormatterTest extends TestCase
         self::assertSame('Алиас', $this->formatter->formatDisplayText('osago_countries_elem_2570', $fieldConfig));
     }
 
-    public function testDictElementOptionsShape(): void
+    public function testExtensionsSpecShape(): void
+    {
+        $fieldConfig = [
+            'name' => 'extensions',
+            'title' => 'Расширенные параметры',
+            'type' => 'extensions',
+        ];
+
+        $raw = [
+            [
+                'type' => 'string',
+                'name' => 'Основание заключения',
+                'value' => 'Дополнительное соглашение',
+            ],
+            [
+                'type' => 'number',
+                'name' => 'Процент скидки',
+                'value' => 10,
+            ],
+        ];
+
+        self::assertSame(
+            "Основание заключения: Дополнительное соглашение\r\nПроцент скидки: 10",
+            $this->formatter->formatDisplayText($raw, $fieldConfig)
+        );
+    }
+
+    public function testDictElementOptionsShapeWithLabel(): void
     {
         $fieldConfig = [
             'name' => 'options',
-            'title' => 'Опции',
-            'type' => 'json',
+            'title' => 'Расширенные параметры',
+            'type' => 'extensions',
         ];
 
         $raw = [

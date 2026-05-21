@@ -436,7 +436,7 @@ class ModelApiService
             'integer[]' => ['array'],
             'float[]' => ['array'],
             'boolean[]' => ['array'],
-            'json' => ['array'],
+            'extensions', 'json' => ['array'],
             'select' => $this->buildSelectRules($fieldConfig),
             'model_element_select' => $this->buildModelElementSelectRules($fieldConfig),
             default => ['string'],

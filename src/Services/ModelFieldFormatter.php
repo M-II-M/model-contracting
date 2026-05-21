@@ -91,7 +91,7 @@ class ModelFieldFormatter
             'integer' => is_numeric($rawValue) ? (int) $rawValue : $rawValue,
             'float' => is_numeric($rawValue) ? (float) $rawValue : $rawValue,
             'date', 'datetime' => $this->formatDateTimeValue($rawValue, $type),
-            'json' => $this->normalizeJsonValue($rawValue),
+            'extensions', 'json' => $this->normalizeExtensionsValue($rawValue),
             'select', 'enum', 'model_element_select' => $rawValue,
             'string[]', 'integer[]', 'float[]', 'boolean[]' => is_array($rawValue) ? $rawValue : $rawValue,
             default => $rawValue,
@@ -118,7 +118,7 @@ class ModelFieldFormatter
         }
 
         return match ($type) {
-            'json' => $this->formatJsonDisplayText($rawValue, $fieldConfig) ?? $title,
+            'extensions', 'json' => $this->formatExtensionsDisplayText($rawValue, $fieldConfig) ?? $title,
             'select' => $this->resolveSelectDisplayText($rawValue, $fieldConfig, $fieldName, $context) ?? $title,
             'enum' => $this->resolveEnumDisplayText($rawValue, $fieldConfig, $fieldName, $context) ?? $title,
             'boolean' => $title,
@@ -159,7 +159,7 @@ class ModelFieldFormatter
         return $parsed->format('d.m.Y');
     }
 
-    private function normalizeJsonValue(mixed $rawValue): mixed
+    private function normalizeExtensionsValue(mixed $rawValue): mixed
     {
         if (is_string($rawValue)) {
             $decoded = json_decode($rawValue, true);
@@ -173,16 +173,16 @@ class ModelFieldFormatter
     /**
      * @param  array<string, mixed>  $fieldConfig
      */
-    private function formatJsonDisplayText(mixed $rawValue, array $fieldConfig): ?string
+    private function formatExtensionsDisplayText(mixed $rawValue, array $fieldConfig): ?string
     {
-        $value = $this->normalizeJsonValue($rawValue);
+        $value = $this->normalizeExtensionsValue($rawValue);
 
         if (! is_array($value)) {
             return $this->fieldTitle($fieldConfig);
         }
 
-        if ($this->isStructuredOptionsList($value)) {
-            return $this->formatStructuredOptionsDisplayText($value);
+        if ($this->isExtensionsList($value)) {
+            return $this->formatExtensionsListDisplayText($value);
         }
 
         return $this->fieldTitle($fieldConfig);
@@ -191,7 +191,7 @@ class ModelFieldFormatter
     /**
      * @param  list<mixed>  $items
      */
-    private function isStructuredOptionsList(array $items): bool
+    private function isExtensionsList(array $items): bool
     {
         if ($items === []) {
             return false;
@@ -202,11 +202,7 @@ class ModelFieldFormatter
                 return false;
             }
 
-            if (! array_key_exists('value', $item)) {
-                return false;
-            }
-
-            if (! array_key_exists('label', $item) && ! array_key_exists('name', $item)) {
+            if (! array_key_exists('name', $item) || ! array_key_exists('value', $item)) {
                 return false;
             }
         }
@@ -217,7 +213,7 @@ class ModelFieldFormatter
     /**
      * @param  list<array<string, mixed>>  $items
      */
-    private function formatStructuredOptionsDisplayText(array $items): string
+    private function formatExtensionsListDisplayText(array $items): string
     {
         $lines = [];
 
@@ -225,7 +221,7 @@ class ModelFieldFormatter
             $label = $item['label'] ?? $item['name'] ?? '';
             $label = is_string($label) ? trim($label) : (is_scalar($label) ? (string) $label : '');
 
-            $formattedValue = $this->formatStructuredOptionItemValue($item);
+            $formattedValue = $this->formatExtensionItemValue($item);
             if ($formattedValue === null) {
                 continue;
             }
@@ -239,7 +235,7 @@ class ModelFieldFormatter
     /**
      * @param  array<string, mixed>  $item
      */
-    private function formatStructuredOptionItemValue(array $item): ?string
+    private function formatExtensionItemValue(array $item): ?string
     {
         if (! array_key_exists('value', $item)) {
             return null;
@@ -248,8 +244,16 @@ class ModelFieldFormatter
         $itemType = $item['type'] ?? 'string';
         $value = $item['value'];
 
-        if ($itemType === 'boolean') {
+        if (in_array($itemType, ['number', 'integer', 'float'], true) && is_numeric($value)) {
+            return (string) $value;
+        }
+
+        if (in_array($itemType, ['boolean', 'bool'], true)) {
             return $this->formatBooleanDisplayText($value);
+        }
+
+        if (in_array($itemType, ['date', 'datetime'], true) && is_scalar($value) && $value !== '') {
+            return $this->formatDateTimeValue($value, $itemType === 'datetime' ? 'datetime' : 'date') ?? (string) $value;
         }
 
         if ($value === null) {

@@ -11,6 +11,7 @@ use Illuminate\Support\Str;
  * - enum — фиксированный список в enum_list (value/text/order).
  * - select — статические options [{ name, value }, ...]; значение поля — одно value или массив value при multiple: true.
  * - model_element_select — ссылка на сущность другой модели.
+ * - extensions — динамические атрибуты [{ type, name, value }, ...].
  */
 class ModelMetaService
 {

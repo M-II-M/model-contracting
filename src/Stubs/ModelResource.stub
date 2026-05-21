@@ -84,6 +84,7 @@ class {{className}} extends ServiceProvider
                 case 'datetime':
                     $fieldRules[] = 'date_format:Y-m-d H:i:s';
                     break;
+                case 'extensions':
                 case 'json':
                 case 'string[]':
                 case 'integer[]':

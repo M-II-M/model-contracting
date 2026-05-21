@@ -178,7 +178,7 @@ class GenerateModelResourceCommand extends Command
             'float' => ['float', 'double', 'decimal', 'numeric', 'real'],
             'datetime' => ['datetime', 'timestamp', 'timestamptz'],
             'date' => ['date'],
-            'json' => ['json', 'jsonb'],
+            'extensions' => ['json', 'jsonb'],
         ];
 
         foreach ($mapping as $type => $patterns) {
