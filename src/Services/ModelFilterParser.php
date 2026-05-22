@@ -7,7 +7,11 @@ use InvalidArgumentException;
 final class ModelFilterParser
 {
     /**
-     * Поддержка legacy ?filter[field]=x, ?filter[field][op]=x и ?filter[options.name][eq]=x.
+     * Поддержка:
+     * - ?filter[field]=x
+     * - ?filter[field][op]=x
+     * - ?filter[options.name][eq]=x
+     * - ?filter[options][name][eq]=x
      *
      * @param  array<string, mixed>  $filterParams
      * @return list<array{field: string, extension_key: string|null, operator: string, value: mixed}>
@@ -16,7 +20,7 @@ final class ModelFilterParser
     {
         $conditions = [];
 
-        foreach ($filterParams as $field => $value) {
+        foreach ($this->normalizeFilterParams($filterParams) as $field => $value) {
             if (! is_string($field) || $field === '' || str_starts_with($field, '_')) {
                 continue;
             }
@@ -52,6 +56,37 @@ final class ModelFilterParser
     }
 
     /**
+     * @param  array<string, mixed>  $filterParams
+     * @return array<string, mixed>
+     */
+    private function normalizeFilterParams(array $filterParams): array
+    {
+        $normalized = [];
+
+        foreach ($filterParams as $field => $value) {
+            if (! is_string($field) || $field === '' || str_starts_with($field, '_')) {
+                continue;
+            }
+
+            if (is_array($value) && ! $this->isOperatorMap($value)) {
+                foreach ($value as $attribute => $attributeValue) {
+                    if (! is_string($attribute) || $attribute === '') {
+                        continue;
+                    }
+
+                    $normalized[$field.'.'.$attribute] = $attributeValue;
+                }
+
+                continue;
+            }
+
+            $normalized[$field] = $value;
+        }
+
+        return $normalized;
+    }
+
+    /**
      * @return array{field: string, extension_key: string|null}
      */
     private function splitFieldKey(string $field): array
@@ -65,7 +100,7 @@ final class ModelFilterParser
 
         if ($baseField === '' || $extensionKey === '') {
             throw new InvalidArgumentException(
-                "Invalid extensions filter key '{$field}'. Use filter[field.attribute][operator]=value."
+                "Invalid extensions filter key '{$field}'. Use filter[{$field}.attribute][operator]=value."
             );
         }
 
@@ -110,7 +145,7 @@ final class ModelFilterParser
             if ($type === 'extensions') {
                 if ($extensionKey === null) {
                     throw new InvalidArgumentException(
-                        "Field '{$field}' has type extensions. Specify attribute: filter[{$field}.attribute][operator]=value, for example filter[{$field}.name][eq]=РОССИЯ."
+                        "Field '{$field}' has type extensions. Use filter[{$field}][attribute][operator]=value, for example filter[{$field}][name][eq]=РОССИЯ."
                     );
                 }
 

@@ -70,7 +70,7 @@ final class ModelFilterParserTest extends TestCase
         ]);
     }
 
-    public function testExtensionsAttributeFilterParsed(): void
+    public function testExtensionsAttributeFilterParsedWithDotKey(): void
     {
         $conditions = $this->parser->parse([
             'options.name' => ['eq' => 'РОССИЯ'],
@@ -86,10 +86,28 @@ final class ModelFilterParserTest extends TestCase
         ], $conditions);
     }
 
+    public function testExtensionsAttributeFilterParsedWithLaravelNesting(): void
+    {
+        $conditions = $this->parser->parse([
+            'options' => [
+                'name' => ['eq' => 'РОССИЯ'],
+            ],
+        ]);
+
+        self::assertSame([
+            [
+                'field' => 'options',
+                'extension_key' => 'name',
+                'operator' => ModelFilterOperator::EQ,
+                'value' => 'РОССИЯ',
+            ],
+        ], $conditions);
+    }
+
     public function testExtensionsFieldWithoutAttributeRejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('filter[options.name]');
+        $this->expectExceptionMessage('filter[options][name]');
 
         $conditions = $this->parser->parse([
             'options' => ['eq' => 'РОССИЯ'],

@@ -67,6 +67,10 @@ class ModelContractingController
 
                 return response()->json($result);
             }
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 400);
         } catch (\Exception $e) {
             return response()->json([
                 'error' => $e->getMessage()
