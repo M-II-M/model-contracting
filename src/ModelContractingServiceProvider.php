@@ -9,6 +9,8 @@ use MIIM\ModelContracting\Services\ModelMetaService;
 use MIIM\ModelContracting\Services\ModelApiService;
 use MIIM\ModelContracting\Services\ModelFieldFormatter;
 use MIIM\ModelContracting\Services\FkDisplayResolver;
+use MIIM\ModelContracting\Services\ModelFilterParser;
+use MIIM\ModelContracting\Services\ModelFilterQueryBuilder;
 
 class ModelContractingServiceProvider extends ServiceProvider
 {
@@ -18,6 +20,8 @@ class ModelContractingServiceProvider extends ServiceProvider
         $this->app->singleton(Services\ModelMetaService::class);
         $this->app->singleton(ModelFieldFormatter::class);
         $this->app->singleton(FkDisplayResolver::class);
+        $this->app->singleton(ModelFilterParser::class);
+        $this->app->singleton(ModelFilterQueryBuilder::class);
         $this->app->singleton(Services\ModelApiService::class);
     }
 

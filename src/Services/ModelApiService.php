@@ -14,6 +14,8 @@ class ModelApiService
         private ModelRegistryService $registryService,
         private ModelFieldFormatter $fieldFormatter,
         private FkDisplayResolver $fkDisplayResolver,
+        private ModelFilterParser $filterParser,
+        private ModelFilterQueryBuilder $filterQueryBuilder,
     ) {}
 
     /**
@@ -66,15 +68,12 @@ class ModelApiService
             $query->whereIn('id', $ids);
         }
 
-        // Фильтрация
+        // Фильтрация (?filter[field]=value + ?filter[field][op]=value)
         if (isset($params['filter']) && is_array($params['filter'])) {
             $filterableFields = $this->registryService->getFilterableFields($alias);
-
-            foreach ($params['filter'] as $field => $value) {
-                if (isset($filterableFields[$field])) {
-                    $query->where($field, $value);
-                }
-            }
+            $conditions = $this->filterParser->parse($params['filter']);
+            $this->filterParser->validate($conditions, $filterableFields);
+            $this->filterQueryBuilder->apply($query, $conditions, $filterableFields);
         }
 
         // Сортировка
