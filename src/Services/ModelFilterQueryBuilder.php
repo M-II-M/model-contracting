@@ -9,15 +9,32 @@ use InvalidArgumentException;
 
 final class ModelFilterQueryBuilder
 {
+    public function __construct(
+        private ExtensionFieldFilter $extensionFieldFilter = new ExtensionFieldFilter(),
+    ) {}
+
     /**
      * @param  array<string, array<string, mixed>>  $filterableFields
-     * @param  list<array{field: string, operator: string, value: mixed}>  $conditions
+     * @param  list<array{field: string, extension_key: string|null, operator: string, value: mixed}>  $conditions
      */
     public function apply(Builder $query, array $conditions, array $filterableFields): void
     {
         foreach ($conditions as $condition) {
             $field = $condition['field'];
             if (! isset($filterableFields[$field])) {
+                continue;
+            }
+
+            $extensionKey = $condition['extension_key'] ?? null;
+            if ($extensionKey !== null) {
+                $this->extensionFieldFilter->apply(
+                    $query,
+                    $field,
+                    $extensionKey,
+                    $condition['operator'],
+                    $condition['value'],
+                );
+
                 continue;
             }
 

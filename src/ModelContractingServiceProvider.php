@@ -11,6 +11,7 @@ use MIIM\ModelContracting\Services\ModelFieldFormatter;
 use MIIM\ModelContracting\Services\FkDisplayResolver;
 use MIIM\ModelContracting\Services\ModelFilterParser;
 use MIIM\ModelContracting\Services\ModelFilterQueryBuilder;
+use MIIM\ModelContracting\Services\ExtensionFieldFilter;
 
 class ModelContractingServiceProvider extends ServiceProvider
 {
@@ -21,6 +22,7 @@ class ModelContractingServiceProvider extends ServiceProvider
         $this->app->singleton(ModelFieldFormatter::class);
         $this->app->singleton(FkDisplayResolver::class);
         $this->app->singleton(ModelFilterParser::class);
+        $this->app->singleton(ExtensionFieldFilter::class);
         $this->app->singleton(ModelFilterQueryBuilder::class);
         $this->app->singleton(Services\ModelApiService::class);
     }

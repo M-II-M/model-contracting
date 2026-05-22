@@ -25,8 +25,8 @@ final class ModelFilterParserTest extends TestCase
         ]);
 
         self::assertSame([
-            ['field' => 'status', 'operator' => ModelFilterOperator::EQ, 'value' => 'active'],
-            ['field' => 'parent_id', 'operator' => ModelFilterOperator::EQ, 'value' => '01abc'],
+            ['field' => 'status', 'extension_key' => null, 'operator' => ModelFilterOperator::EQ, 'value' => 'active'],
+            ['field' => 'parent_id', 'extension_key' => null, 'operator' => ModelFilterOperator::EQ, 'value' => '01abc'],
         ], $conditions);
     }
 
@@ -67,6 +67,49 @@ final class ModelFilterParserTest extends TestCase
 
         $this->parser->validate($conditions, [
             'is_active' => ['type' => 'boolean', 'is_filtered' => true],
+        ]);
+    }
+
+    public function testExtensionsAttributeFilterParsed(): void
+    {
+        $conditions = $this->parser->parse([
+            'options.name' => ['eq' => 'РОССИЯ'],
+        ]);
+
+        self::assertSame([
+            [
+                'field' => 'options',
+                'extension_key' => 'name',
+                'operator' => ModelFilterOperator::EQ,
+                'value' => 'РОССИЯ',
+            ],
+        ], $conditions);
+    }
+
+    public function testExtensionsFieldWithoutAttributeRejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('filter[options.name]');
+
+        $conditions = $this->parser->parse([
+            'options' => ['eq' => 'РОССИЯ'],
+        ]);
+
+        $this->parser->validate($conditions, [
+            'options' => ['type' => 'extensions', 'is_filtered' => true],
+        ]);
+    }
+
+    public function testNonExtensionsFieldWithDotRejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $conditions = $this->parser->parse([
+            'alias.code' => ['eq' => 'x'],
+        ]);
+
+        $this->parser->validate($conditions, [
+            'alias' => ['type' => 'string', 'is_filtered' => true],
         ]);
     }
 }
