@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Builder;
 use InvalidArgumentException;
 
 /**
- * Фильтрация по атрибутам поля type=extensions: ?filter[options.name][eq]=value
+ * Фильтрация по атрибутам поля type=extensions.
  */
 final class ExtensionFieldFilter
 {
+    private const MATCH_BY_VALUE_ONLY_KEY = 'value';
     public function apply(
         Builder $query,
         string $column,
@@ -51,6 +52,20 @@ final class ExtensionFieldFilter
         }
 
         [$sql, $bindings] = $this->buildPostgresValuePredicate($operator, $value);
+
+        if ($this->matchesByValueOnly($attributeKey)) {
+            $query->whereRaw(
+                "EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements({$jsonColumn}) AS ext
+                    WHERE ({$sql})
+                )",
+                $bindings,
+            );
+
+            return;
+        }
+
         $query->whereRaw(
             "EXISTS (
                 SELECT 1
@@ -60,6 +75,11 @@ final class ExtensionFieldFilter
             )",
             array_merge([$attributeKey], $bindings),
         );
+    }
+
+    private function matchesByValueOnly(string $attributeKey): bool
+    {
+        return $attributeKey === self::MATCH_BY_VALUE_ONLY_KEY;
     }
 
     private function buildPostgresValuePredicate(string $operator, mixed $value): array
@@ -125,6 +145,25 @@ final class ExtensionFieldFilter
         }
 
         [$valueSql, $bindings] = $this->buildMysqlValuePredicate($operator, $value);
+
+        if ($this->matchesByValueOnly($attributeKey)) {
+            $query->whereRaw(
+                "EXISTS (
+                    SELECT 1
+                    FROM JSON_TABLE(
+                        {$wrappedColumn},
+                        '$[*]' COLUMNS (
+                            value_text VARCHAR(4000) PATH '$.value'
+                        )
+                    ) AS ext
+                    WHERE ({$valueSql})
+                )",
+                $bindings,
+            );
+
+            return;
+        }
+
         $query->whereRaw(
             "EXISTS (
                 SELECT 1
@@ -217,13 +256,12 @@ final class ExtensionFieldFilter
             return;
         }
 
-        $stringValue = mb_strtolower($this->stringValue($value));
+        $scalarValue = $this->stringValue($value);
         $pattern = match ($operator) {
-            ModelFilterOperator::EQ => $stringValue,
-            ModelFilterOperator::NEQ => $stringValue,
-            ModelFilterOperator::CONTAINS => '%'.mb_strtolower($this->escapeLike($this->stringValue($value))).'%',
-            ModelFilterOperator::STARTS_WITH => mb_strtolower($this->escapeLike($this->stringValue($value))).'%',
-            ModelFilterOperator::ENDS_WITH => '%'.mb_strtolower($this->escapeLike($this->stringValue($value))).'%',
+            ModelFilterOperator::EQ, ModelFilterOperator::NEQ => $scalarValue,
+            ModelFilterOperator::CONTAINS => '%'.$this->escapeLike($scalarValue).'%',
+            ModelFilterOperator::STARTS_WITH => $this->escapeLike($scalarValue).'%',
+            ModelFilterOperator::ENDS_WITH => '%'.$this->escapeLike($scalarValue).'%',
             default => throw new InvalidArgumentException("Operator '{$operator}' is not supported for extensions attributes."),
         };
 
@@ -234,12 +272,25 @@ final class ExtensionFieldFilter
             default => throw new InvalidArgumentException("Operator '{$operator}' is not supported for extensions attributes."),
         };
 
+        if ($this->matchesByValueOnly($attributeKey)) {
+            $query->whereRaw(
+                "EXISTS (
+                    SELECT 1
+                    FROM json_each({$wrappedColumn}) AS ext
+                    WHERE json_extract(ext.value, '$.value') {$compare} ?
+                )",
+                [$pattern],
+            );
+
+            return;
+        }
+
         $query->whereRaw(
             "EXISTS (
                 SELECT 1
                 FROM json_each({$wrappedColumn}) AS ext
                 WHERE json_extract(ext.value, '$.name') = ?
-                  AND LOWER(json_extract(ext.value, '$.value')) {$compare} ?
+                  AND json_extract(ext.value, '$.value') {$compare} ?
             )",
             [$attributeKey, $pattern],
         );

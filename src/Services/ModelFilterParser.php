@@ -145,7 +145,7 @@ final class ModelFilterParser
             if ($type === 'extensions') {
                 if ($extensionKey === null) {
                     throw new InvalidArgumentException(
-                        "Field '{$field}' has type extensions. Use filter[{$field}][attribute][operator]=value, for example filter[{$field}][name][eq]=РОССИЯ."
+                        "Field '{$field}' has type extensions. Use filter[{$field}][attribute][operator]=value, for example filter[{$field}][name][eq]=РОССИЯ or filter[{$field}][value][eq]=РОССИЯ to match any option value."
                     );
                 }
 
