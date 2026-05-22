@@ -19,24 +19,25 @@ final class ExtensionFieldFilter
         mixed $value,
     ): void {
         $driver = $query->getConnection()->getDriverName();
-        $wrappedColumn = $query->getGrammar()->wrap($column);
+        // Квалифицированный столбец (table.column) — обязателен для коррелированного JSON_TABLE в MySQL.
+        $jsonColumn = $query->qualifyColumn($column);
 
         match ($driver) {
-            'pgsql' => $this->applyPostgres($query, $wrappedColumn, $attributeKey, $operator, $value),
-            'mysql' => $this->applyMysql($query, $wrappedColumn, $attributeKey, $operator, $value),
-            'sqlite' => $this->applySqlite($query, $wrappedColumn, $attributeKey, $operator, $value),
+            'pgsql' => $this->applyPostgres($query, $jsonColumn, $attributeKey, $operator, $value),
+            'mysql' => $this->applyMysql($query, $jsonColumn, $attributeKey, $operator, $value),
+            'sqlite' => $this->applySqlite($query, $jsonColumn, $attributeKey, $operator, $value),
             default => throw new InvalidArgumentException("Extension filters are not supported for driver '{$driver}'."),
         };
     }
 
     private function applyPostgres(
         Builder $query,
-        string $wrappedColumn,
+        string $qualifiedColumn,
         string $attributeKey,
         string $operator,
         mixed $value,
     ): void {
-        $jsonColumn = "CAST({$wrappedColumn} AS jsonb)";
+        $jsonColumn = "CAST({$qualifiedColumn} AS jsonb)";
 
         if ($operator === ModelFilterOperator::IS_NULL) {
             $exists = $this->postgresAttributeExistsSql($jsonColumn);
@@ -126,58 +127,81 @@ final class ExtensionFieldFilter
 
     private function applyMysql(
         Builder $query,
-        string $wrappedColumn,
+        string $qualifiedColumn,
         string $attributeKey,
         string $operator,
         mixed $value,
     ): void {
         if ($operator === ModelFilterOperator::IS_NULL) {
-            $existsSql = $this->mysqlAttributeExistsSql($wrappedColumn);
-            if ($this->castBoolean($value)) {
-                $query->whereRaw("NOT ({$existsSql})", [$attributeKey]);
-
-                return;
-            }
-
-            $query->whereRaw($existsSql, [$attributeKey]);
+            $this->applyMysqlIsNull($query, $qualifiedColumn, $attributeKey, $value);
 
             return;
         }
 
         [$valueSql, $bindings] = $this->buildMysqlValuePredicate($operator, $value);
+        $this->applyMysqlJsonTableMatch(
+            $query,
+            $qualifiedColumn,
+            $attributeKey,
+            $valueSql,
+            $bindings,
+            false,
+        );
+    }
 
-        if ($this->matchesByValueOnly($attributeKey)) {
-            $query->whereRaw(
-                "EXISTS (
-                    SELECT 1
-                    FROM JSON_TABLE(
-                        {$wrappedColumn},
-                        '$[*]' COLUMNS (
-                            value_text VARCHAR(4000) PATH '$.value'
-                        )
-                    ) AS ext
-                    WHERE ({$valueSql})
-                )",
-                $bindings,
-            );
+    /**
+     * MySQL: JSON_TABLE в EXISTS не коррелируется с внешней строкой — используем IN + INNER JOIN.
+     *
+     * @param  list<mixed>  $bindings
+     */
+    private function applyMysqlJsonTableMatch(
+        Builder $query,
+        string $qualifiedOptionsColumn,
+        string $attributeKey,
+        string $valueSql,
+        array $bindings,
+        bool $negate = false,
+    ): void {
+        $model = $query->getModel();
+        $grammar = $query->getGrammar();
+        $table = $grammar->wrapTable($model->getTable());
+        $idColumn = $grammar->wrap($model->getKeyName());
+        $qualifiedId = $query->qualifyColumn($model->getKeyName());
 
-            return;
-        }
+        $jsonColumns = $this->matchesByValueOnly($attributeKey)
+            ? "value_text VARCHAR(4000) PATH '\$.value'"
+            : "name VARCHAR(255) PATH '\$.name', value_text VARCHAR(4000) PATH '\$.value'";
 
-        $query->whereRaw(
-            "EXISTS (
-                SELECT 1
-                FROM JSON_TABLE(
-                    {$wrappedColumn},
-                    '$[*]' COLUMNS (
-                        name VARCHAR(255) PATH '$.name',
-                        value_text VARCHAR(4000) PATH '$.value'
-                    )
-                ) AS ext
-                WHERE ext.name = ?
-                  AND ({$valueSql})
-            )",
-            array_merge([$attributeKey], $bindings),
+        $namePredicate = $this->matchesByValueOnly($attributeKey)
+            ? '1 = 1'
+            : 'ext.name = ?';
+
+        $nameBindings = $this->matchesByValueOnly($attributeKey) ? [] : [$attributeKey];
+
+        $subquery = "SELECT {$table}.{$idColumn}
+            FROM {$table}
+            INNER JOIN JSON_TABLE(
+                {$qualifiedOptionsColumn},
+                '\$[*]' COLUMNS ({$jsonColumns})
+            ) AS ext ON {$namePredicate} AND ({$valueSql})";
+
+        $inOperator = $negate ? 'NOT IN' : 'IN';
+        $query->whereRaw("{$qualifiedId} {$inOperator} ({$subquery})", array_merge($nameBindings, $bindings));
+    }
+
+    private function applyMysqlIsNull(
+        Builder $query,
+        string $qualifiedOptionsColumn,
+        string $attributeKey,
+        mixed $value,
+    ): void {
+        $this->applyMysqlJsonTableMatch(
+            $query,
+            $qualifiedOptionsColumn,
+            $attributeKey,
+            'ext.value_text IS NOT NULL AND ext.value_text != ?',
+            [''],
+            $this->castBoolean($value),
         );
     }
 
@@ -212,26 +236,9 @@ final class ExtensionFieldFilter
         return ["LOWER(ext.value_text) {$operator} ({$placeholders})", $lowered];
     }
 
-    private function mysqlAttributeExistsSql(string $wrappedColumn): string
-    {
-        return "EXISTS (
-            SELECT 1
-            FROM JSON_TABLE(
-                {$wrappedColumn},
-                '$[*]' COLUMNS (
-                    name VARCHAR(255) PATH '$.name',
-                    value_text VARCHAR(4000) PATH '$.value'
-                )
-            ) AS ext
-            WHERE ext.name = ?
-              AND ext.value_text IS NOT NULL
-              AND ext.value_text != ''
-        )";
-    }
-
     private function applySqlite(
         Builder $query,
-        string $wrappedColumn,
+        string $qualifiedColumn,
         string $attributeKey,
         string $operator,
         mixed $value,
@@ -239,7 +246,7 @@ final class ExtensionFieldFilter
         if ($operator === ModelFilterOperator::IS_NULL) {
             $existsSql = "EXISTS (
                 SELECT 1
-                FROM json_each({$wrappedColumn}) AS ext
+                FROM json_each({$qualifiedColumn}) AS ext
                 WHERE json_extract(ext.value, '$.name') = ?
                   AND json_extract(ext.value, '$.value') IS NOT NULL
                   AND json_extract(ext.value, '$.value') != ''
@@ -276,7 +283,7 @@ final class ExtensionFieldFilter
             $query->whereRaw(
                 "EXISTS (
                     SELECT 1
-                    FROM json_each({$wrappedColumn}) AS ext
+                    FROM json_each({$qualifiedColumn}) AS ext
                     WHERE json_extract(ext.value, '$.value') {$compare} ?
                 )",
                 [$pattern],
@@ -288,7 +295,7 @@ final class ExtensionFieldFilter
         $query->whereRaw(
             "EXISTS (
                 SELECT 1
-                FROM json_each({$wrappedColumn}) AS ext
+                FROM json_each({$qualifiedColumn}) AS ext
                 WHERE json_extract(ext.value, '$.name') = ?
                   AND json_extract(ext.value, '$.value') {$compare} ?
             )",
