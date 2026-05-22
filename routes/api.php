@@ -17,3 +17,19 @@ Route::patch('/admin/{alias}', [ModelContractingController::class, 'update'])
 
 Route::delete('/admin/{alias}', [ModelContractingController::class, 'destroy'])
     ->name('model-contracting.delete');
+
+
+Route::get('/admin/v2/{alias}/meta', [ModelContractingController::class, 'getMeta'])
+    ->name('model-contracting.meta');
+
+Route::get('/admin/v2/{alias}', [ModelContractingController::class, 'index'])
+    ->name('model-contracting.index');
+
+Route::post('/admin/v2/{alias}', [ModelContractingController::class, 'store'])
+    ->name('model-contracting.create');
+
+Route::patch('/admin/v2/{alias}', [ModelContractingController::class, 'update'])
+    ->name('model-contracting.update');
+
+Route::delete('/admin/v2/{alias}', [ModelContractingController::class, 'destroy'])
+    ->name('model-contracting.delete');

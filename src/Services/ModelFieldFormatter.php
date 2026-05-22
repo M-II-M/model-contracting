@@ -4,6 +4,7 @@ namespace MIIM\ModelContracting\Services;
 
 use Carbon\Carbon;
 use Carbon\Exceptions\InvalidFormatException;
+use Illuminate\Http\Request;
 
 class ModelFieldFormatter
 {
@@ -67,14 +68,19 @@ class ModelFieldFormatter
      * @param  array{titles: array<string, string|null>, selectMaps: array<string, array<string, string>>, enumMaps: array<string, array<string, string>>}|null  $context
      * @return array{value: mixed, display_text: string|null}
      */
-    public function formatField(mixed $rawValue, array $fieldConfig, ?string $fieldName = null, ?array $context = null): array
+    public function formatField(mixed $rawValue, array $fieldConfig, ?string $fieldName = null, ?array $context = null): mixed
     {
         $value = $this->formatValue($rawValue, $fieldConfig);
-
-        return [
-            'value' => $value,
-            'display_text' => $this->formatDisplayText($rawValue, $value, $fieldConfig, $fieldName, $context),
-        ];
+        $request = request();
+        $segmentApiVersion = $request->path();
+        if (strpos($segmentApiVersion,"v2")!==false){
+            return [
+                'value' => $value,
+                'display_text' => $this->formatDisplayText($rawValue, $value, $fieldConfig, $fieldName, $context),
+            ];
+        }else{
+            return $value;
+        }
     }
 
     /**
